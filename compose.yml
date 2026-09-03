@@ -39,7 +39,7 @@ services:
 
   ################################################################################
 
-  cdp-node-backend-template:
+  dwt-client-sync:
     build:
       context: .
       target: development
