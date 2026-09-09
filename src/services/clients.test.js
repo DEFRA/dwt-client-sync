@@ -27,8 +27,8 @@ describe('#findClient', () => {
     const result = findClient(userPoolId, clientId, db)
 
     expect(dbFindFn).toHaveBeenCalledWith({
-      UserPoolId: userPoolId,
-      ClientId: clientId
+      'UserPoolClient.UserPoolId': userPoolId,
+      'UserPoolClient.ClientId': clientId
     })
     expect(result).toEqual(clientRecord)
   })
@@ -37,8 +37,8 @@ describe('#findClient', () => {
     const result = findClient(userPoolId, clientId, db)
 
     expect(dbFindFn).toHaveBeenCalledWith({
-      UserPoolId: userPoolId,
-      ClientId: clientId
+      'UserPoolClient.UserPoolId': userPoolId,
+      'UserPoolClient.ClientId': clientId
     })
     expect(result).toBeUndefined()
   })
