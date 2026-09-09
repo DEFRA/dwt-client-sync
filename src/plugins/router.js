@@ -1,5 +1,5 @@
 import { health } from '#/routes/health.js'
-import { clients } from '#/routes/clients'
+import { clients } from '#/routes/clients.js'
 
 export const router = {
   plugin: {
