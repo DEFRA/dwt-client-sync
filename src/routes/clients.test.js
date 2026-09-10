@@ -1,3 +1,12 @@
+import { mockClient } from 'aws-sdk-client-mock'
+import {
+  CognitoIdentityProviderClient,
+  DescribeUserPoolClientCommand,
+  InternalErrorException,
+  ListUserPoolClientsCommand,
+  ResourceNotFoundException
+} from '@aws-sdk/client-cognito-identity-provider'
+
 import * as clientService from '#/services/clients.js'
 import { clients } from './clients.js'
 
@@ -54,5 +63,109 @@ describe('Client Routes', () => {
         statusCode: 500
       })
     })
+  })
+})
+
+describe('#clients routes', () => {
+  const cognitoMock = mockClient(CognitoIdentityProviderClient)
+  const userPoolId = 'eu-west-2_testPool'
+  const auth = { strategy: 'basic', credentials: { username: 'test' } }
+
+  let server
+
+  beforeAll(async () => {
+    // Dynamic import needed due to config being updated by vitest-mongodb
+    const { createServer } = await import('#/server.js')
+
+    server = await createServer()
+    await server.initialize()
+  })
+
+  beforeEach(() => {
+    cognitoMock.reset()
+  })
+
+  test('Should return the user pool clients', async () => {
+    cognitoMock.on(ListUserPoolClientsCommand).resolves({
+      UserPoolClients: [
+        {
+          ClientId: 'client-1',
+          ClientName: 'Client One',
+          UserPoolId: userPoolId
+        }
+      ]
+    })
+    cognitoMock.on(DescribeUserPoolClientCommand).resolves({
+      UserPoolClient: {
+        UserPoolId: userPoolId,
+        ClientName: 'Client One',
+        ClientId: 'client-1',
+        LastModifiedDate: new Date('2026-07-10T08:41:31.618Z'),
+        CreationDate: new Date('2026-05-19T08:25:53.785Z')
+      }
+    })
+
+    const response = await server.inject({
+      method: 'GET',
+      url: `/clients/${userPoolId}`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(JSON.parse(response.payload)).toEqual([
+      {
+        UserPoolClient: {
+          UserPoolId: userPoolId,
+          ClientName: 'Client One',
+          ClientId: 'client-1',
+          LastModifiedDate: '2026-07-10T08:41:31.618Z',
+          CreationDate: '2026-05-19T08:25:53.785Z'
+        }
+      }
+    ])
+  })
+
+  test('Should return 404 with no body when the user pool does not exist', async () => {
+    cognitoMock.on(ListUserPoolClientsCommand).rejects(
+      new ResourceNotFoundException({
+        message: 'User pool does not exist.',
+        $metadata: {}
+      })
+    )
+
+    const response = await server.inject({
+      method: 'GET',
+      url: `/clients/${userPoolId}`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(404)
+    expect(response.payload).toBe('')
+  })
+
+  test('Should return 500 when Cognito fails unexpectedly', async () => {
+    cognitoMock.on(ListUserPoolClientsCommand).rejects(
+      new InternalErrorException({
+        message: 'Something went wrong.',
+        $metadata: {}
+      })
+    )
+
+    const response = await server.inject({
+      method: 'GET',
+      url: `/clients/${userPoolId}`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(500)
+  })
+
+  test('Should return 401 without credentials', async () => {
+    const response = await server.inject({
+      method: 'GET',
+      url: `/clients/${userPoolId}`
+    })
+
+    expect(response.statusCode).toBe(401)
   })
 })

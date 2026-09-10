@@ -16,6 +16,10 @@ export const mongoDb = {
       const db = client.db(databaseName)
       const locker = new LockManager(db.collection('mongo-locks'))
 
+      // LockManager kicks off index creation without awaiting it, which can
+      // reject out-of-band (unhandled) if the client closes mid-build
+      await locker.ready
+
       await createIndexes(db)
 
       server.logger.info(`MongoDb connected to ${databaseName}`)

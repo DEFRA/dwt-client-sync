@@ -30,6 +30,7 @@
   "author": "Defra DDTS",
   "license": "OGL-UK-3.0",
   "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "3.1128.0",
     "@aws-sdk/credential-providers": "3.1119.0",
     "@defra/cdp-auditing": "0.6.1",
     "@defra/cdp-metrics": "0.6.0",
@@ -51,6 +52,7 @@
   },
   "devDependencies": {
     "@vitest/coverage-v8": "4.1.11",
+    "aws-sdk-client-mock": "4.1.0",
     "eslint": "9.39.5",
     "husky": "9.1.7",
     "neostandard": "0.13.0",
