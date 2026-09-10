@@ -1,12 +1,3 @@
-import { mockClient } from 'aws-sdk-client-mock'
-import {
-  CognitoIdentityProviderClient,
-  DescribeUserPoolClientCommand,
-  InternalErrorException,
-  ListUserPoolClientsCommand,
-  ResourceNotFoundException
-} from '@aws-sdk/client-cognito-identity-provider'
-
 describe('Client Routes', () => {
   let clientService
   let clients
@@ -71,36 +62,11 @@ describe('Client Routes', () => {
   })
 })
 
-describe('#clients routes', () => {
-  const cognitoMock = mockClient(CognitoIdentityProviderClient)
+describe('GET Clients for a user pool', () => {
   const userPoolId = 'eu-west-2_testPool'
   const auth = { strategy: 'basic', credentials: { username: 'test' } }
-
-  let server
-
-  beforeAll(async () => {
-    // Dynamic import needed due to config being updated by vitest-mongodb
-    const { createServer } = await import('#/server.js')
-
-    server = await createServer()
-    await server.initialize()
-  })
-
-  beforeEach(() => {
-    cognitoMock.reset()
-  })
-
-  test('Should return the user pool clients', async () => {
-    cognitoMock.on(ListUserPoolClientsCommand).resolves({
-      UserPoolClients: [
-        {
-          ClientId: 'client-1',
-          ClientName: 'Client One',
-          UserPoolId: userPoolId
-        }
-      ]
-    })
-    cognitoMock.on(DescribeUserPoolClientCommand).resolves({
+  const clientRecords = [
+    {
       UserPoolClient: {
         UserPoolId: userPoolId,
         ClientName: 'Client One',
@@ -108,7 +74,51 @@ describe('#clients routes', () => {
         LastModifiedDate: new Date('2026-07-10T08:41:31.618Z'),
         CreationDate: new Date('2026-05-19T08:25:53.785Z')
       }
-    })
+    },
+    {
+      UserPoolClient: {
+        UserPoolId: userPoolId,
+        ClientName: 'Client Two',
+        ClientId: 'client-2',
+        LastModifiedDate: new Date('2026-08-01T10:00:00.000Z'),
+        CreationDate: new Date('2026-06-01T10:00:00.000Z')
+      }
+    }
+  ]
+  const otherPoolRecord = {
+    UserPoolClient: {
+      UserPoolId: 'eu-west-2_otherPool',
+      ClientName: 'Other Client',
+      ClientId: 'client-3',
+      LastModifiedDate: new Date('2026-08-01T10:00:00.000Z'),
+      CreationDate: new Date('2026-06-01T10:00:00.000Z')
+    }
+  }
+
+  let clientService
+  let server
+
+  beforeAll(async () => {
+    // Dynamic import needed due to config being updated by vitest-mongodb
+    clientService = await import('#/services/clients.js')
+    const { createServer } = await import('#/server.js')
+
+    server = await createServer()
+    await server.initialize()
+  })
+
+  beforeEach(async () => {
+    await server.db.collection('clients').deleteMany({})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  test('Should return all clients for the user pool', async () => {
+    await server.db
+      .collection('clients')
+      .insertMany(structuredClone([...clientRecords, otherPoolRecord]))
 
     const response = await server.inject({
       method: 'GET',
@@ -126,18 +136,20 @@ describe('#clients routes', () => {
           LastModifiedDate: '2026-07-10T08:41:31.618Z',
           CreationDate: '2026-05-19T08:25:53.785Z'
         }
+      },
+      {
+        UserPoolClient: {
+          UserPoolId: userPoolId,
+          ClientName: 'Client Two',
+          ClientId: 'client-2',
+          LastModifiedDate: '2026-08-01T10:00:00.000Z',
+          CreationDate: '2026-06-01T10:00:00.000Z'
+        }
       }
     ])
   })
 
-  test('Should return 404 with no body when the user pool does not exist', async () => {
-    cognitoMock.on(ListUserPoolClientsCommand).rejects(
-      new ResourceNotFoundException({
-        message: 'User pool does not exist.',
-        $metadata: {}
-      })
-    )
-
+  test('Should return a 404 error when the user pool has no clients', async () => {
     const response = await server.inject({
       method: 'GET',
       url: `/clients/${userPoolId}`,
@@ -145,16 +157,12 @@ describe('#clients routes', () => {
     })
 
     expect(response.statusCode).toBe(404)
-    expect(response.payload).toBe('')
   })
 
-  test('Should return 500 when Cognito fails unexpectedly', async () => {
-    cognitoMock.on(ListUserPoolClientsCommand).rejects(
-      new InternalErrorException({
-        message: 'Something went wrong.',
-        $metadata: {}
-      })
-    )
+  test('Should return a 500 error when an error is thrown', async () => {
+    vi.spyOn(clientService, 'findClients').mockImplementation(() => {
+      throw new Error('Something went wrong')
+    })
 
     const response = await server.inject({
       method: 'GET',
@@ -165,7 +173,7 @@ describe('#clients routes', () => {
     expect(response.statusCode).toBe(500)
   })
 
-  test('Should return 401 without credentials', async () => {
+  test('Should return a 401 error without credentials', async () => {
     const response = await server.inject({
       method: 'GET',
       url: `/clients/${userPoolId}`
