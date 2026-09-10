@@ -7,10 +7,15 @@ import {
   ResourceNotFoundException
 } from '@aws-sdk/client-cognito-identity-provider'
 
-import * as clientService from '#/services/clients.js'
-import { clients } from './clients.js'
-
 describe('Client Routes', () => {
+  let clientService
+  let clients
+
+  beforeAll(async () => {
+    clientService = await import('#/services/clients.js')
+    ;({ clients } = await import('./clients.js'))
+  })
+
   const userPoolId = 123
   const clientId = 456
   const clientRecord = {
