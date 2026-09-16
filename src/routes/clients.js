@@ -7,14 +7,14 @@ const logger = createLogger()
 export const clients = [
   {
     method: 'GET',
-    path: '/clients/{userPoolId}/{clientId}',
+    path: '/clients/{tenantServiceName}/{clientId}',
     handler: async (request, h) => {
       try {
         const {
           db,
-          params: { userPoolId, clientId }
+          params: { tenantServiceName, clientId }
         } = request
-        const client = await findClient(userPoolId, clientId, db)
+        const client = await findClient(tenantServiceName, clientId, db)
 
         if (!client) {
           return Boom.notFound()

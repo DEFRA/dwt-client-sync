@@ -7,18 +7,17 @@ describe('Client Routes', () => {
     ;({ clients } = await import('./clients.js'))
   })
 
-  const userPoolId = 123
-  const clientId = 456
   const clientRecord = {
-    UserPoolClient: {
-      UserPoolId: userPoolId,
-      ClientName: 'Test Client',
-      ClientId: clientId,
-      LastModifiedDate: '2026-07-10T08:41:31.618Z',
-      CreationDate: '2026-05-19T08:25:53.785Z'
+    clientName: 'Test Client',
+    clientId: '1a2b3c4d5e6f7g8h9i0j1k2l3m',
+    tenantServiceName: 'waste-movement-external-api'
+  }
+  const request = {
+    params: {
+      tenantServiceName: clientRecord.tenantServiceName,
+      clientId: clientRecord.clientId
     }
   }
-  const request = { params: { userPoolId, clientId } }
   const h = {
     response: vi.fn().mockReturnThis(),
     code: vi.fn().mockReturnThis()
@@ -63,36 +62,23 @@ describe('Client Routes', () => {
 })
 
 describe('GET Clients for a user pool', () => {
-  const userPoolId = 'eu-west-2_testPool'
   const auth = { strategy: 'basic', credentials: { username: 'test' } }
   const clientRecords = [
     {
-      UserPoolClient: {
-        UserPoolId: userPoolId,
-        ClientName: 'Client One',
-        ClientId: 'client-1',
-        LastModifiedDate: new Date('2026-07-10T08:41:31.618Z'),
-        CreationDate: new Date('2026-05-19T08:25:53.785Z')
-      }
+      clientName: 'Test Client One',
+      clientId: '1a2b3c4d5e6f7g8h9i0j1k2l3m',
+      tenantServiceName: 'waste-movement-external-api'
     },
     {
-      UserPoolClient: {
-        UserPoolId: userPoolId,
-        ClientName: 'Client Two',
-        ClientId: 'client-2',
-        LastModifiedDate: new Date('2026-08-01T10:00:00.000Z'),
-        CreationDate: new Date('2026-06-01T10:00:00.000Z')
-      }
+      clientName: 'Test Client Two',
+      clientId: '2a2b3c4d5e6f7g8h9i0j1k2l3m',
+      tenantServiceName: 'waste-movement-external-api'
     }
   ]
   const otherPoolRecord = {
-    UserPoolClient: {
-      UserPoolId: 'eu-west-2_otherPool',
-      ClientName: 'Other Client',
-      ClientId: 'client-3',
-      LastModifiedDate: new Date('2026-08-01T10:00:00.000Z'),
-      CreationDate: new Date('2026-06-01T10:00:00.000Z')
-    }
+    clientName: 'Test Client Three',
+    clientId: '3a2b3c4d5e6f7g8h9i0j1k2l3m',
+    tenantServiceName: 'waste-movement-backend-service'
   }
 
   let clientService
@@ -122,37 +108,18 @@ describe('GET Clients for a user pool', () => {
 
     const response = await server.inject({
       method: 'GET',
-      url: `/clients/${userPoolId}`,
+      url: `/clients/${clientRecords[0].tenantServiceName}`,
       auth
     })
 
     expect(response.statusCode).toBe(200)
-    expect(JSON.parse(response.payload)).toEqual([
-      {
-        UserPoolClient: {
-          UserPoolId: userPoolId,
-          ClientName: 'Client One',
-          ClientId: 'client-1',
-          LastModifiedDate: '2026-07-10T08:41:31.618Z',
-          CreationDate: '2026-05-19T08:25:53.785Z'
-        }
-      },
-      {
-        UserPoolClient: {
-          UserPoolId: userPoolId,
-          ClientName: 'Client Two',
-          ClientId: 'client-2',
-          LastModifiedDate: '2026-08-01T10:00:00.000Z',
-          CreationDate: '2026-06-01T10:00:00.000Z'
-        }
-      }
-    ])
+    expect(JSON.parse(response.payload)).toEqual(clientRecords)
   })
 
   test('Should return a 404 error when the user pool has no clients', async () => {
     const response = await server.inject({
       method: 'GET',
-      url: `/clients/${userPoolId}`,
+      url: `/clients/${clientRecords[0].tenantServiceName}`,
       auth
     })
 
@@ -166,7 +133,7 @@ describe('GET Clients for a user pool', () => {
 
     const response = await server.inject({
       method: 'GET',
-      url: `/clients/${userPoolId}`,
+      url: `/clients/${clientRecords[0].tenantServiceName}`,
       auth
     })
 
@@ -176,7 +143,7 @@ describe('GET Clients for a user pool', () => {
   test('Should return a 401 error without credentials', async () => {
     const response = await server.inject({
       method: 'GET',
-      url: `/clients/${userPoolId}`
+      url: `/clients/${clientRecords[0].tenantServiceName}`
     })
 
     expect(response.statusCode).toBe(401)
