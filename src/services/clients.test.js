@@ -23,10 +23,13 @@ describe('#findClient', () => {
       db
     )
 
-    expect(dbFindFn).toHaveBeenCalledWith({
-      tenantServiceName: clientRecord.tenantServiceName,
-      clientId: clientRecord.clientId
-    })
+    expect(dbFindFn).toHaveBeenCalledWith(
+      {
+        tenantServiceName: clientRecord.tenantServiceName,
+        clientId: clientRecord.clientId
+      },
+      { projection: { _id: 0 } }
+    )
     expect(result).toEqual(clientRecord)
   })
 
@@ -37,10 +40,13 @@ describe('#findClient', () => {
       db
     )
 
-    expect(dbFindFn).toHaveBeenCalledWith({
-      tenantServiceName: clientRecord.tenantServiceName,
-      clientId: clientRecord.clientId
-    })
+    expect(dbFindFn).toHaveBeenCalledWith(
+      {
+        tenantServiceName: clientRecord.tenantServiceName,
+        clientId: clientRecord.clientId
+      },
+      { projection: { _id: 0 } }
+    )
     expect(result).toBeUndefined()
   })
 })
