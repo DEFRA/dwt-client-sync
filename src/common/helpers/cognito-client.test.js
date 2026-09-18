@@ -1,6 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const mockGet = vi.fn()
+const { mockGet, mockSign } = vi.hoisted(() => ({
+  mockGet: vi.fn(),
+  mockSign: vi.fn()
+}))
+
+vi.mock('@aws-sdk/signature-v4', () => ({
+  SignatureV4: vi.fn(function () {
+    this.sign = mockSign
+  })
+}))
+
+vi.mock('@aws-sdk/credential-provider-node', () => ({
+  defaultProvider: vi.fn(() => vi.fn())
+}))
 
 vi.mock('@hapi/wreck', () => ({
   default: {
@@ -32,6 +45,13 @@ const { allCognitoCredentials } = await import('./cognito-client.js')
 describe('allCognitoCredentials', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+
+    mockSign.mockResolvedValue({
+      headers: {
+        Authorization: 'mocked-signature',
+        'X-Amz-Date': '20260918T150000Z'
+      }
+    })
   })
 
   it('returns Cognito credentials successfully', async () => {
@@ -52,6 +72,7 @@ describe('allCognitoCredentials', () => {
     const result = await allCognitoCredentials('my-service')
 
     expect(result).toEqual(expectedResult)
+    expect(mockSign).toHaveBeenCalledTimes(1)
     expect(mockGet).toHaveBeenCalledTimes(1)
     const [url, options] = mockGet.mock.calls[0]
     expect(url).toBe('https://example.com/clients/my-service')
@@ -69,5 +90,6 @@ describe('allCognitoCredentials', () => {
     await expect(allCognitoCredentials('my-service')).rejects.toThrow(
       'Failed to fetch Cognito credentials. Status code: 500'
     )
+    expect(mockSign).toHaveBeenCalledTimes(1)
   })
 })

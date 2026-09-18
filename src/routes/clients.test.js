@@ -1,3 +1,7 @@
+vi.mock('#/common/helpers/cognito-client.js', () => ({
+  allCognitoCredentials: vi.fn()
+}))
+
 describe('Client Routes', () => {
   let clientService
   let clients
@@ -153,10 +157,6 @@ describe('POST Clients sync', () => {
   const auth = { strategy: 'basic', credentials: { username: 'test' } }
   let server
   let allCognitoCredentials
-
-  vi.mock('#/common/helpers/cognito-client.js', () => ({
-    allCognitoCredentials: vi.fn()
-  }))
 
   beforeAll(async () => {
     allCognitoCredentials = (await import('#/common/helpers/cognito-client.js'))
