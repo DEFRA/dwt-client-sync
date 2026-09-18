@@ -8,7 +8,9 @@
  * @returns {Promise<{clientName: String, clientId: String, tenantServiceName: String}>} The waste inputs
  */
 export function findClient(tenantServiceName, clientId, db) {
-  return db.collection('clients').findOne({ tenantServiceName, clientId })
+  return db
+    .collection('clients')
+    .findOne({ tenantServiceName, clientId }, { projection: { _id: 0 } })
 }
 
 /**

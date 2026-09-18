@@ -29,14 +29,14 @@ export const clients = [
   },
   {
     method: 'GET',
-    path: '/clients/{userPoolId}',
+    path: '/clients/{tenantServiceName}',
     handler: async (request, h) => {
       try {
         const {
           db,
-          params: { userPoolId }
+          params: { tenantServiceName }
         } = request
-        const clientRecords = await findClients(userPoolId, db)
+        const clientRecords = await findClients(tenantServiceName, db)
 
         if (clientRecords.length === 0) {
           return Boom.notFound()
