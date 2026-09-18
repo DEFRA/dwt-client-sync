@@ -37,6 +37,19 @@ services:
       retries: 3
       start_period: 30s
 
+  mockServer:
+    image: mockserver/mockserver:8.0.0
+    ports:
+      - 1080:1080
+    environment:
+      - MOCKSERVER_MAX_EXPECTATIONS=100
+      - MOCKSERVER_MAX_HEADER_SIZE=8192
+      - MOCKSERVER_INITIALIZATION_JSON_PATH=/config/mockInitializer.json
+    volumes:
+      - ./compose/mockInitializer.json:/config/mockInitializer.json
+    networks:
+      - cdp-tenant
+
   ################################################################################
 
   dwt-client-sync:
@@ -45,6 +58,7 @@ services:
       target: development
     ports:
       - '3001:3001'
+      - "9229:9229"
     links:
       - 'floci:floci'
       - 'mongodb:mongodb'
@@ -56,14 +70,16 @@ services:
     env_file:
       - 'compose/aws.env'
     environment:
+      NODE_OPTIONS: "--inspect=0.0.0.0:9229"
       PORT: 3001
       NODE_ENV: development
       MONGO_URI: mongodb://mongodb:27017/
+      CDP_BASE_API_URL: mockServer:1080
+      ACCESS_CRED_WASTE_MOVEMENT_EXTERNAL_API: 'dXNlcj1wYXNzd29yZA=='
+      LOG_LEVEL: debug
+      COGNITO_SERVICE_SYNC_LIST: 'waste-movement-external-api'
     networks:
       - cdp-tenant
-    volumes:
-      - ./src:/home/node/src
-      - ./package.json:/home/node/package.json
 
 ################################################################################
 

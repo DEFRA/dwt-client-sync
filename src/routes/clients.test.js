@@ -1,3 +1,7 @@
+vi.mock('#/common/helpers/cognito-client.js', () => ({
+  allCognitoCredentials: vi.fn()
+}))
+
 describe('Client Routes', () => {
   let clientService
   let clients
@@ -28,7 +32,7 @@ describe('Client Routes', () => {
     it('should return a client when client is found', async () => {
       vi.spyOn(clientService, 'findClient').mockReturnValue(clientRecord)
 
-      await clients[0].handler(request, h)
+      await clients[1].handler(request, h)
 
       expect(h.response).toHaveBeenCalledWith(clientRecord)
     })
@@ -36,7 +40,7 @@ describe('Client Routes', () => {
     it('should return a 404 error when client is not found', async () => {
       vi.spyOn(clientService, 'findClient').mockReturnValue(undefined)
 
-      const result = await clients[0].handler(request, h)
+      const result = await clients[1].handler(request, h)
 
       expect(result.output.payload).toEqual({
         error: 'Not Found',
@@ -50,7 +54,7 @@ describe('Client Routes', () => {
         throw new Error(errorMessage)
       })
 
-      const result = await clients[0].handler(request, h)
+      const result = await clients[1].handler(request, h)
 
       expect(result.output.payload).toEqual({
         error: 'Internal Server Error',
@@ -144,6 +148,85 @@ describe('GET Clients for a user pool', () => {
     const response = await server.inject({
       method: 'GET',
       url: `/clients/${clientRecords[0].tenantServiceName}`
+    })
+
+    expect(response.statusCode).toBe(401)
+  })
+})
+describe('POST Clients sync', () => {
+  const auth = { strategy: 'basic', credentials: { username: 'test' } }
+  let server
+  let allCognitoCredentials
+
+  beforeAll(async () => {
+    allCognitoCredentials = (await import('#/common/helpers/cognito-client.js'))
+      .allCognitoCredentials
+    const { createServer } = await import('#/server.js')
+
+    server = await createServer()
+    await server.initialize()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  test('Should return all synced clients', async () => {
+    allCognitoCredentials.mockResolvedValue({
+      body: {
+        client_details: [
+          { client_name: 'Client One', client_id: 'client-1' },
+          { client_name: 'Client Two', client_id: 'client-2' }
+        ]
+      }
+    })
+
+    const response = await server.inject({
+      method: 'POST',
+      url: `/clients/sync`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(allCognitoCredentials).toHaveBeenCalled()
+
+    const payload = JSON.parse(response.payload)
+
+    expect(payload.result.totalServicesProcessed).toBeGreaterThan(0)
+    expect(payload.result.services).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ credentialsSynced: 2 })
+      ])
+    )
+  })
+  test('Should return zero credentials synced when Cognito returns no client details', async () => {
+    allCognitoCredentials.mockResolvedValue({ body: { client_details: [] } })
+
+    const response = await server.inject({
+      method: 'POST',
+      url: `/clients/sync`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(200)
+
+    const payload = JSON.parse(response.payload)
+
+    expect(payload.result.totalServicesProcessed).toBe(1)
+    expect(payload.result.services).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          credentialsSynced: 0,
+          serviceName: 'waste-movement-external-api'
+        })
+      ])
+    )
+  })
+
+  test('Should return a 401 error without credentials', async () => {
+    const response = await server.inject({
+      method: 'POST',
+      url: `/clients/sync`
     })
 
     expect(response.statusCode).toBe(401)
