@@ -11,6 +11,7 @@ import { pulse } from '#/plugins/pulse.js'
 import { requestTracing } from '#/plugins/request-tracing.js'
 import { metrics } from '@defra/cdp-metrics'
 import { basicAuth, getEnvVars } from '@defra/waste-movement-utils'
+import { scheduledClientSync } from '#/plugins/scheduled-client-sync.js'
 
 export async function createServer() {
   const server = Hapi.server({
@@ -57,7 +58,8 @@ export async function createServer() {
       options: config.get('mongo')
     },
     router,
-    basicAuth(getEnvVars('ACCESS_CRED_'))
+    scheduledClientSync,
+    basicAuth(getEnvVars('ACCESS_CRED_')),
   ])
 
   server.auth.default('basic')

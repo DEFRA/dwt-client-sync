@@ -182,3 +182,84 @@ describe('GET Clients for a user pool', () => {
     expect(response.statusCode).toBe(401)
   })
 })
+describe('POST Clients sync', () => {
+  const auth = { strategy: 'basic', credentials: { username: 'test' } }
+  let server
+  let allCognitoCredentials
+
+  vi.mock('#/common/helpers/cognito-client.js', () => ({
+    allCognitoCredentials: vi.fn()
+  }))
+
+  beforeAll(async () => {
+    allCognitoCredentials = (await import('#/common/helpers/cognito-client.js'))
+      .allCognitoCredentials
+    const { createServer } = await import('#/server.js')
+
+    server = await createServer()
+    await server.initialize()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  test('Should return all synced clients', async () => {
+    allCognitoCredentials.mockResolvedValue({
+      client_details: [
+        { client_name: 'Client One', client_id: 'client-1' },
+        { client_name: 'Client Two', client_id: 'client-2' }
+      ]
+    })
+
+    const response = await server.inject({
+      method: 'POST',
+      url: `/clients/sync`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(allCognitoCredentials).toHaveBeenCalled()
+
+    const payload = JSON.parse(response.payload)
+
+    expect(payload.result.totalServicesProcessed).toBeGreaterThan(0)
+    expect(payload.result.services).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ credentialsSynced: 2 })
+      ])
+    )
+  })
+  test('Should return zero credentials synced when Cognito returns no client details', async () => {
+    allCognitoCredentials.mockResolvedValue({ client_details: [] })
+
+    const response = await server.inject({
+      method: 'POST',
+      url: `/clients/sync`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(200)
+
+    const payload = JSON.parse(response.payload)
+
+    expect(payload.result.totalServicesProcessed).eq(1)
+    expect(payload.result.services).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          credentialsSynced: 0,
+          serviceName: 'waste-movement-external-api'
+        })
+      ])
+    )
+  })
+
+  test('Should return a 401 error without credentials', async () => {
+    const response = await server.inject({
+      method: 'POST',
+      url: `/clients/sync`
+    })
+
+    expect(response.statusCode).toBe(401)
+  })
+})
