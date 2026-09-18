@@ -10,6 +10,7 @@
         "Content-Type": ["application/json"]
       },
       "body": {
+        "statusCode": 200,
         "body": {
           "cognito_user_pool_id": "eu-west-2_EXAMPLE01",
           "request_id": "7ac6090a4a02401d9ed283f651e2074c",

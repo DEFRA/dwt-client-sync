@@ -11,7 +11,6 @@ export const clients = [
     path: '/clients/sync',
     handler: async (request, h) => {
       try {
-
         logger.info('Sync client called')
 
         const result = await sync()

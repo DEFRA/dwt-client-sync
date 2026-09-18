@@ -31,7 +31,7 @@ async function sync() {
 
         const credentials = await allCognitoCredentials(service)
 
-        if (!credentials || !credentials.client_details) {
+        if (!credentials || !credentials.body.client_details) {
           logger.error('No credentials found in Cognito response')
           result.services.push({ serviceName: service, credentialsSynced: 0 })
           continue

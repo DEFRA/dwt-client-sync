@@ -36,13 +36,10 @@ async function allCognitoCredentials(serviceName) {
 
   logger.info(`${protocol}://${baseUrl}${path}`)
 
-  const { res, payload } = await Wreck.get(
-    `${protocol}://${baseUrl}${path}`,
-    {
-      headers: signed.headers,
-      json: true
-    }
-  )
+  const { res, payload } = await Wreck.get(`${protocol}://${baseUrl}${path}`, {
+    headers: signed.headers,
+    json: true
+  })
 
   if (res.statusCode !== 200) {
     logger.error(

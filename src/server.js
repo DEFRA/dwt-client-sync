@@ -59,7 +59,7 @@ export async function createServer() {
     },
     router,
     scheduledClientSync,
-    basicAuth(getEnvVars('ACCESS_CRED_')),
+    basicAuth(getEnvVars('ACCESS_CRED_'))
   ])
 
   server.auth.default('basic')

@@ -28,7 +28,7 @@ describe('Client Routes', () => {
     it('should return a client when client is found', async () => {
       vi.spyOn(clientService, 'findClient').mockReturnValue(clientRecord)
 
-      await clients[0].handler(request, h)
+      await clients[1].handler(request, h)
 
       expect(h.response).toHaveBeenCalledWith(clientRecord)
     })
@@ -36,7 +36,7 @@ describe('Client Routes', () => {
     it('should return a 404 error when client is not found', async () => {
       vi.spyOn(clientService, 'findClient').mockReturnValue(undefined)
 
-      const result = await clients[0].handler(request, h)
+      const result = await clients[1].handler(request, h)
 
       expect(result.output.payload).toEqual({
         error: 'Not Found',
@@ -50,7 +50,7 @@ describe('Client Routes', () => {
         throw new Error(errorMessage)
       })
 
-      const result = await clients[0].handler(request, h)
+      const result = await clients[1].handler(request, h)
 
       expect(result.output.payload).toEqual({
         error: 'Internal Server Error',
@@ -173,10 +173,12 @@ describe('POST Clients sync', () => {
 
   test('Should return all synced clients', async () => {
     allCognitoCredentials.mockResolvedValue({
-      client_details: [
-        { client_name: 'Client One', client_id: 'client-1' },
-        { client_name: 'Client Two', client_id: 'client-2' }
-      ]
+      body: {
+        client_details: [
+          { client_name: 'Client One', client_id: 'client-1' },
+          { client_name: 'Client Two', client_id: 'client-2' }
+        ]
+      }
     })
 
     const response = await server.inject({
@@ -198,7 +200,7 @@ describe('POST Clients sync', () => {
     )
   })
   test('Should return zero credentials synced when Cognito returns no client details', async () => {
-    allCognitoCredentials.mockResolvedValue({ client_details: [] })
+    allCognitoCredentials.mockResolvedValue({ body: { client_details: [] } })
 
     const response = await server.inject({
       method: 'POST',
@@ -210,7 +212,7 @@ describe('POST Clients sync', () => {
 
     const payload = JSON.parse(response.payload)
 
-    expect(payload.result.totalServicesProcessed).eq(1)
+    expect(payload.result.totalServicesProcessed).toBe(1)
     expect(payload.result.services).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

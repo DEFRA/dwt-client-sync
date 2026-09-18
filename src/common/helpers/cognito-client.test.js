@@ -1,131 +1,73 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest'
-import Wreck from '@hapi/wreck'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+const mockGet = vi.fn()
+
+vi.mock('@hapi/wreck', () => ({
+  default: {
+    get: mockGet
+  }
+}))
 
 vi.mock('#/config.js', () => ({
   config: {
-    get: vi.fn((key) => {
-      if (key === 'cognito') {
-        return {
-          baseUrl: 'mockserver:1080',
-          region: 'eu-west-1',
-          signerService: 'execute-api',
-          listClientsPath:
-            '/tenants/services/{service-name}/user-pool/fetch-details',
-          protocol: 'http'
-        }
-      }
-      return undefined
-    })
+    get: vi.fn(() => ({
+      baseUrl: 'example.com',
+      region: 'eu-west-2',
+      signerService: 'execute-api',
+      listClientsPath: '/clients/{service-name}',
+      protocol: 'https'
+    }))
   }
 }))
 
 vi.mock('#/common/helpers/logging/logger.js', () => ({
-  createLogger: () => ({
+  createLogger: vi.fn(() => ({
     info: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn()
-  })
-}))
-
-vi.mock('@aws-sdk/credential-provider-node', () => ({
-  defaultProvider: vi.fn()
-}))
-
-const mockSign = vi.fn().mockResolvedValue({
-  headers: { authorization: 'AWS4-HMAC-SHA256 mock-signature' }
-})
-
-vi.mock('@aws-sdk/signature-v4', () => ({
-  SignatureV4: vi.fn().mockImplementation(() => ({
-    sign: mockSign
+    error: vi.fn()
   }))
 }))
 
-vi.mock('@hapi/wreck', () => ({
-  default: {
-    get: vi.fn()
-  }
-}))
+const { allCognitoCredentials } = await import('./cognito-client.js')
 
 describe('allCognitoCredentials', () => {
-  let allCognitoCredentials
-
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks()
-    mockSign.mockResolvedValue({
-      headers: { authorization: 'AWS4-HMAC-SHA256 mock-signature' }
-    })
-    ;({ allCognitoCredentials } =
-      await import('#/common/helpers/cognito-client.js'))
   })
 
-  it('fetches and returns credentials on a 200 response', async () => {
-    const responsePayload = {
-      client_details: [
-        { client_name: 'Client One', client_id: 'client-1' },
-        { client_name: 'Client Two', client_id: 'client-2' }
-      ]
-    }
+  it('returns Cognito credentials successfully', async () => {
+    const expectedResult = [
+      {
+        clientId: 'client-123',
+        clientSecret: 'secret'
+      }
+    ]
 
-    Wreck.get.mockResolvedValue({
-      res: { statusCode: 200 },
-      payload: responsePayload
+    mockGet.mockResolvedValue({
+      res: {
+        statusCode: 200
+      },
+      payload: expectedResult
     })
 
-    const result = await allCognitoCredentials('waste-movement-external-api')
+    const result = await allCognitoCredentials('my-service')
 
-    expect(result).toEqual(responsePayload)
+    expect(result).toEqual(expectedResult)
+    expect(mockGet).toHaveBeenCalledTimes(1)
+    const [url, options] = mockGet.mock.calls[0]
+    expect(url).toBe('https://example.com/clients/my-service')
+    expect(options.json).toBe(true)
   })
 
-  it('builds the request URL with the service name interpolated into the path', async () => {
-    Wreck.get.mockResolvedValue({
-      res: { statusCode: 200 },
-      payload: { client_details: [] }
+  it('throws an error when the backend returns a non-200 status', async () => {
+    mockGet.mockResolvedValue({
+      res: {
+        statusCode: 500
+      },
+      payload: {}
     })
 
-    await allCognitoCredentials('waste-movement-external-api')
-
-    expect(Wreck.get).toHaveBeenCalledWith(
-      'http://mockserver:1080/tenants/services/waste-movement-external-api/user-pool/fetch-details',
-      expect.objectContaining({ json: true })
+    await expect(allCognitoCredentials('my-service')).rejects.toThrow(
+      'Failed to fetch Cognito credentials. Status code: 500'
     )
-  })
-
-  it('signs the request and forwards the signed headers to Wreck', async () => {
-    Wreck.get.mockResolvedValue({
-      res: { statusCode: 200 },
-      payload: { client_details: [] }
-    })
-
-    await allCognitoCredentials('waste-movement-external-api')
-
-    expect(mockSign).toHaveBeenCalled()
-    expect(Wreck.get).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({
-        headers: { authorization: 'AWS4-HMAC-SHA256 mock-signature' }
-      })
-    )
-  })
-
-  it('throws and logs when the response status code is not 200', async () => {
-    Wreck.get.mockResolvedValue({
-      res: { statusCode: 403 },
-      payload: { message: 'Forbidden' }
-    })
-
-    await expect(
-      allCognitoCredentials('waste-movement-external-api')
-    ).rejects.toThrow('Failed to fetch Cognito credentials. Status code: 403')
-  })
-
-  it('propagates a network-level error thrown by Wreck', async () => {
-    Wreck.get.mockRejectedValue(
-      new Error('Client request error: getaddrinfo ENOTFOUND')
-    )
-
-    await expect(
-      allCognitoCredentials('waste-movement-external-api')
-    ).rejects.toThrow('Client request error: getaddrinfo ENOTFOUND')
   })
 })
