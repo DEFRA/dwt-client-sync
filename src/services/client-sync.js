@@ -31,17 +31,17 @@ async function sync() {
 
         const credentials = await allCognitoCredentials(service)
 
-        if (!credentials || !credentials.body.client_details) {
+        if (!credentials || !credentials.client_details) {
           logger.error('No credentials found in Cognito response')
           result.services.push({ serviceName: service, credentialsSynced: 0 })
           continue
         }
 
         logger.info(
-          `Fetched ${credentials.body.client_details.length} Cognito credentials`
+          `Fetched ${credentials.client_details.length} Cognito credentials`
         )
 
-        const softwareProviders = credentials.body.client_details.map(
+        const softwareProviders = credentials.client_details.map(
           ({ client_name: clientName, client_id: clientId }) => [
             { text: clientName },
             { text: clientId }
