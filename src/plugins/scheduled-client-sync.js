@@ -8,15 +8,17 @@ const logger = createLogger()
 export const scheduledClientSync = {
   plugin: {
     name: 'scheduled-client-sync',
-    register() {
+    register(server) {
       const { syncSchedule } = config.get('cognito')
+
+      const { db, locker } = server
 
       cron.schedule(
         syncSchedule,
         async () => {
           logger.info(`Scheduled client sync starting`)
 
-          const results = await sync()
+          const results = await sync(db, locker)
 
           logger.info(results)
 

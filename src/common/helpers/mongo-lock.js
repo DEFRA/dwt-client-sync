@@ -16,3 +16,18 @@ export async function requireLock(locker, resource) {
   }
   return lock
 }
+
+export async function releaseLock(lock, logger) {
+  if (!lock) {
+    return
+  }
+
+  try {
+    logger.info(`Releasing lock`)
+    await lock.free()
+  } catch (error) {
+    if (logger) {
+      logger.error({ error }, 'Failed to release lock')
+    }
+  }
+}
