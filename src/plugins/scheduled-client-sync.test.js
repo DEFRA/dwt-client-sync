@@ -1,6 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { Db, MongoClient } from 'mongodb'
-import { LockManager } from 'mongo-locks'
 
 const { mockSchedule, mockSync, mockCreateLogger, mockConfigGet } = vi.hoisted(
   () => ({
