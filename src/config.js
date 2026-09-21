@@ -126,6 +126,50 @@ export const config = convict({
       default: 'x-cdp-request-id',
       env: 'TRACING_HEADER'
     }
+  },
+  cognito: {
+    protocol: {
+      doc: 'Protocol for the Cognito service',
+      format: ['http', 'https'],
+      default: 'http',
+      env: 'COGNITO_PROTOCOL'
+    },
+    syncSchedule: {
+      doc: 'Cron schedule for syncing Cognito credentials',
+      format: String,
+      default: '0 0 * * *',
+      env: 'COGNITO_SYNC_SCHEDULE'
+    },
+    region: {
+      doc: 'AWS Cognito region',
+      format: String,
+      default: 'eu-west-1',
+      env: 'COGNITO_REGION'
+    },
+    baseUrl: {
+      doc: 'Base URL for the Cognito service',
+      format: String,
+      default: '',
+      env: 'CDP_BASE_API_URL'
+    },
+    signerService: {
+      doc: 'AWS signer service name for signing requests to the Cognito service',
+      format: String,
+      default: 'execute-api',
+      env: 'AWS_SIGNER_SERVICE'
+    },
+    listClientsPath: {
+      doc: 'Path for the Cognito list clients endpoint',
+      format: String,
+      default: '/tenants/services/{service-name}/user-pool/fetch-details',
+      env: 'COGNITO_LIST_CLIENTS_PATH'
+    },
+    serviceSyncList: {
+      doc: 'List of services to sync',
+      format: String,
+      default: 'waste-movement-external-api',
+      env: 'COGNITO_SERVICE_SYNC_LIST'
+    }
   }
 })
 
