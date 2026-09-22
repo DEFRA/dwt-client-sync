@@ -173,12 +173,10 @@ describe('POST Clients sync', () => {
 
   test('Should return all synced clients', async () => {
     allCognitoCredentials.mockResolvedValue({
-      body: {
-        client_details: [
-          { client_name: 'Client One', client_id: 'client-1' },
-          { client_name: 'Client Two', client_id: 'client-2' }
-        ]
-      }
+      client_details: [
+        { client_name: 'Client One', client_id: 'client-1' },
+        { client_name: 'Client Two', client_id: 'client-2' }
+      ]
     })
 
     const response = await server.inject({

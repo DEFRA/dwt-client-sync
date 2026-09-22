@@ -32,12 +32,10 @@ describe('Software Provider sync', () => {
 
   it('returns all synced clients', async () => {
     mockAllCognitoCredentials.mockResolvedValue({
-      body: {
-        client_details: [
-          { client_name: 'Client One', client_id: 'client-1' },
-          { client_name: 'Client Two', client_id: 'client-2' }
-        ]
-      }
+      client_details: [
+        { client_name: 'Client One', client_id: 'client-1' },
+        { client_name: 'Client Two', client_id: 'client-2' }
+      ]
     })
 
     const result = await sync()

@@ -144,7 +144,7 @@ export const config = convict({
       doc: 'AWS Cognito region',
       format: String,
       default: 'eu-west-1',
-      env: 'COGNITO_REGION'
+      env: 'AWS_REGION'
     },
     baseUrl: {
       doc: 'Base URL for the Cognito service',
