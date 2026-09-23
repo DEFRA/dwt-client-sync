@@ -1,4 +1,7 @@
 import { isDeepStrictEqual } from 'node:util'
+import { config } from '#/config.js'
+
+const collectionName = config.get('mongo.collectionName')
 
 /**
  * Finds a waste input for the given tenantServiceName and clientId in the given db.
@@ -11,7 +14,7 @@ import { isDeepStrictEqual } from 'node:util'
  */
 export function findClient(tenantServiceName, clientId, db) {
   return db
-    .collection('clients')
+    .collection(collectionName)
     .findOne({ tenantServiceName, clientId }, { projection: { _id: 0 } })
 }
 
@@ -25,7 +28,7 @@ export function findClient(tenantServiceName, clientId, db) {
  */
 export function findClients(tenantServiceName, db) {
   return db
-    .collection('clients')
+    .collection(collectionName)
     .find({ tenantServiceName }, { projection: { _id: 0 } })
     .toArray()
 }
@@ -35,7 +38,7 @@ export async function store(logger, db, incomingClients, tenantServiceName) {
 
   try {
     existing = await db
-      .collection('clients')
+      .collection(collectionName)
       .find({ tenantServiceName }, { projection: { _id: 0 } })
       .toArray()
   } catch (error) {
@@ -57,12 +60,12 @@ export async function store(logger, db, incomingClients, tenantServiceName) {
     const existingDoc = existingByKey.get(clientId)
 
     if (!existingDoc) {
-      // new — insert
+      // new:  insert
       operations.push({
         insertOne: { document: incomingDoc }
       })
     } else if (!isDeepStrictEqual(existingDoc, incomingDoc)) {
-      // changed — update
+      // changed:  update
       operations.push({
         updateOne: {
           filter: { clientId, tenantServiceName },
@@ -72,7 +75,7 @@ export async function store(logger, db, incomingClients, tenantServiceName) {
     }
   }
 
-  // Missing from incoming — remove
+  // Missing from incoming: delete
   for (const clientId of existingByKey.keys()) {
     if (!incomingByKey.has(clientId)) {
       operations.push({
@@ -88,7 +91,7 @@ export async function store(logger, db, incomingClients, tenantServiceName) {
 
   try {
     const result = await db
-      .collection('clients')
+      .collection(collectionName)
       .bulkWrite(operations, { ordered: false })
 
     logger.info(

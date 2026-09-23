@@ -1,4 +1,4 @@
-import { acquireLock, requireLock } from './mongo-lock.js'
+import { acquireLock, releaseLock, requireLock } from './mongo-lock.js'
 
 describe('Lock Functions', () => {
   let locker
@@ -9,7 +9,8 @@ describe('Lock Functions', () => {
       lock: vi.fn()
     }
     logger = {
-      error: vi.fn()
+      error: vi.fn(),
+      info: vi.fn()
     }
   })
 
@@ -64,6 +65,35 @@ describe('Lock Functions', () => {
         `Failed to acquire lock for ${resource}`
       )
       expect(locker.lock).toHaveBeenCalledWith(resource)
+    })
+
+    describe('releaseLock', () => {
+      test('should release lock', async () => {
+        const mockLock = { id: 'lockId', free: vi.fn() }
+
+        await releaseLock(mockLock, logger)
+
+        expect(mockLock.free).toHaveBeenCalled()
+        expect(logger.info).toHaveBeenCalledWith(`Releasing lock`)
+      })
+
+      test('releaseLock throws an error', async () => {
+        const mockLock = { id: 'lockId', free: vi.fn() }
+
+        mockLock.free = vi.fn().mockImplementation(() => {
+          throw new Error('Error happened while releasing lock')
+        })
+
+        await releaseLock(mockLock, logger)
+
+        expect(mockLock.free).toHaveBeenCalled()
+        expect(logger.error).toHaveBeenCalledWith(
+          `Error happened while releasing lock, Failed to release lock`
+        )
+      })
+      test('releaseLock no lock', async () => {
+        await releaseLock(undefined, logger)
+      })
     })
   })
 })

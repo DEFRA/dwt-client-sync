@@ -157,10 +157,12 @@ describe('POST Clients sync', () => {
   const auth = { strategy: 'basic', credentials: { username: 'test' } }
   let server
   let allCognitoCredentials
+  let clientSyncService
 
   beforeAll(async () => {
     allCognitoCredentials = (await import('#/common/helpers/cognito-client.js'))
       .allCognitoCredentials
+    clientSyncService = await import('#/services/client-sync.js')
     const { createServer } = await import('#/server.js')
 
     server = await createServer()
@@ -228,5 +230,19 @@ describe('POST Clients sync', () => {
     })
 
     expect(response.statusCode).toBe(401)
+  })
+
+  test('Should return a 500 error when an error is thrown', async () => {
+    vi.spyOn(clientSyncService, 'sync').mockImplementation(() => {
+      throw new Error('Something went wrong')
+    })
+
+    const response = await server.inject({
+      method: 'POST',
+      url: `/clients/sync`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(500)
   })
 })

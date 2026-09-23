@@ -89,6 +89,12 @@ export const config = convict({
       default: 'dwt-client-sync',
       env: 'MONGO_DATABASE'
     },
+    collectionName: {
+      doc: 'Collection name for clients',
+      format: String,
+      default: 'clients',
+      env: 'CLIENTS_COLLECTION_NAME'
+    },
     mongoOptions: {
       retryWrites: {
         doc: 'Enable Mongo write retries, overrides mongo URI when set.',

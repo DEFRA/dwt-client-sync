@@ -27,7 +27,7 @@ export async function releaseLock(lock, logger) {
     await lock.free()
   } catch (error) {
     if (logger) {
-      logger.error({ error }, 'Failed to release lock')
+      logger.error(`${error.message}, Failed to release lock`)
     }
   }
 }

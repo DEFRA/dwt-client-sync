@@ -53,7 +53,8 @@ async function sync(db, locker) {
         const softwareProviders = credentials.client_details.map(
           ({ client_name: clientName, client_id: clientId }) => ({
             clientId,
-            clientName
+            clientName,
+            tenantServiceName: service
           })
         )
 
