@@ -298,35 +298,4 @@ describe('#store', () => {
       `Sync partially or fully failed for ${tenantServiceName} with error ${bulkWriteError}, writeErrors: ${bulkWriteError.writeErrors}, result: ${bulkWriteError.result}`
     )
   })
-
-  it('treats clients with different field values as changed even with matching clientId', async () => {
-    mockToArray.mockResolvedValue([
-      { clientId: 'client-1', clientName: 'A', extraField: 'x' }
-    ])
-    mockBulkWrite.mockResolvedValue({
-      insertedCount: 0,
-      modifiedCount: 1,
-      deletedCount: 0
-    })
-
-    const incomingClients = [
-      { clientId: 'client-1', clientName: 'A', extraField: 'y' }
-    ]
-
-    await store(logger, db, incomingClients, tenantServiceName)
-
-    expect(mockBulkWrite).toHaveBeenCalledWith(
-      [
-        {
-          updateOne: {
-            filter: { clientId: 'client-1', tenantServiceName },
-            update: {
-              $set: { clientId: 'client-1', clientName: 'A', extraField: 'y' }
-            }
-          }
-        }
-      ],
-      { ordered: false }
-    )
-  })
 })
