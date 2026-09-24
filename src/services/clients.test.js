@@ -250,7 +250,7 @@ describe('#store', () => {
     mockToArray.mockResolvedValue([])
     mockBulkWrite.mockResolvedValue({
       insertedCount: 2,
-      modifiedCount: 1,
+      modifiedCount: 0,
       deletedCount: 0
     })
 
@@ -262,7 +262,7 @@ describe('#store', () => {
     await store(logger, db, incomingClients, tenantServiceName)
 
     expect(logger.info).toHaveBeenCalledWith(
-      'Sync completed: 2 inserted, 1 updated, 0 deleted'
+      'Sync completed: 2 inserted, 0 updated, 0 deleted'
     )
   })
 
