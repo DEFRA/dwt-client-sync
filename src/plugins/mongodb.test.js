@@ -43,5 +43,19 @@ describe('#mongoDb', () => {
 
       expect(closeSpy).toHaveBeenCalledWith(true)
     })
+
+    test('Should log and not throw when closing Mongo client fails', async () => {
+      const closeError = new Error('Connection already terminated')
+
+      vi.spyOn(server.mongoClient, 'close').mockRejectedValue(closeError)
+      const loggerErrorSpy = vi.spyOn(server.logger, 'error')
+
+      await expect(server.stop({ timeout: 1000 })).resolves.not.toThrow()
+
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        closeError,
+        'failed to close mongo client'
+      )
+    })
   })
 })

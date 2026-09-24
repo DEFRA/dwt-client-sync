@@ -20,7 +20,7 @@ export const mongoDb = {
       // reject out-of-band (unhandled) if the client closes mid-build
       await locker.ready
 
-      await createIndexes(db)
+      await createIndexes(db, options)
 
       server.logger.info(`MongoDb connected to ${databaseName}`)
 
@@ -42,6 +42,9 @@ export const mongoDb = {
   }
 }
 
-async function createIndexes(db) {
+async function createIndexes(db, options) {
   await db.collection('mongo-locks').createIndex({ id: 1 })
+  await db
+    .collection(options.collectionName)
+    .createIndex({ tenantServiceName: 1, clientId: 1 }, { unique: true })
 }

@@ -1,31 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { mockSchedule, mockSync, mockCreateLogger, mockConfigGet } = vi.hoisted(
-  () => ({
-    mockSchedule: vi.fn(),
-    mockSync: vi.fn(),
-    mockCreateLogger: vi.fn(),
-    mockConfigGet: vi.fn()
-  })
-)
-
 vi.mock('node-cron', () => ({
   default: {
-    schedule: mockSchedule
+    schedule: vi.fn()
   }
 }))
 
 vi.mock('#/services/client-sync.js', () => ({
-  sync: mockSync
+  sync: vi.fn()
 }))
 
 vi.mock('#/common/helpers/logging/logger.js', () => ({
-  createLogger: mockCreateLogger
+  createLogger: vi.fn()
 }))
 
 vi.mock('#/config.js', () => ({
   config: {
-    get: mockConfigGet
+    get: vi.fn()
   }
 }))
 
@@ -35,16 +26,32 @@ describe('scheduledClientSync', () => {
     error: vi.fn()
   }
 
-  beforeEach(() => {
+  const mockServer = {
+    db: {},
+    logger: mockLogger
+  }
+
+  let cron
+  let sync
+  let createLogger
+  let config
+
+  beforeEach(async () => {
     vi.clearAllMocks()
 
-    mockCreateLogger.mockReturnValue(mockLogger)
+    cron = (await import('node-cron')).default
+    sync = (await import('#/services/client-sync.js')).sync
+    createLogger = (await import('#/common/helpers/logging/logger.js'))
+      .createLogger
+    config = (await import('#/config.js')).config
 
-    mockConfigGet.mockReturnValue({
+    createLogger.mockReturnValue(mockLogger)
+
+    config.get.mockReturnValue({
       syncSchedule: '0 * * * *'
     })
 
-    mockSync.mockResolvedValue({
+    sync.mockResolvedValue({
       totalServicesProcessed: 2,
       services: []
     })
@@ -53,11 +60,11 @@ describe('scheduledClientSync', () => {
   it('registers the scheduled client sync cron job', async () => {
     const { scheduledClientSync } = await import('./scheduled-client-sync.js')
 
-    scheduledClientSync.plugin.register()
+    scheduledClientSync.plugin.register(mockServer)
 
-    expect(mockConfigGet).toHaveBeenCalledWith('cognito')
+    expect(config.get).toHaveBeenCalledWith('cognito')
 
-    expect(mockSchedule).toHaveBeenCalledWith(
+    expect(cron.schedule).toHaveBeenCalledWith(
       '0 * * * *',
       expect.any(Function),
       {
@@ -70,13 +77,13 @@ describe('scheduledClientSync', () => {
   it('calls sync and logs results when the cron callback runs', async () => {
     const { scheduledClientSync } = await import('./scheduled-client-sync.js')
 
-    scheduledClientSync.plugin.register()
+    scheduledClientSync.plugin.register(mockServer)
 
-    const scheduledCallback = mockSchedule.mock.calls[0][1]
+    const scheduledCallback = cron.schedule.mock.calls[0][1]
 
     await scheduledCallback()
 
-    expect(mockSync).toHaveBeenCalledOnce()
+    expect(sync).toHaveBeenCalledOnce()
 
     expect(mockLogger.info).toHaveBeenCalledWith(
       'Scheduled client sync starting'
@@ -93,14 +100,14 @@ describe('scheduledClientSync', () => {
   })
 
   it('passes the configured schedule to cron', async () => {
-    mockConfigGet.mockReturnValue({
+    config.get.mockReturnValue({
       syncSchedule: '*/10 * * * *'
     })
 
     const { scheduledClientSync } = await import('./scheduled-client-sync.js')
 
-    scheduledClientSync.plugin.register()
+    scheduledClientSync.plugin.register(mockServer)
 
-    expect(mockSchedule.mock.calls[0][0]).toBe('*/10 * * * *')
+    expect(cron.schedule.mock.calls[0][0]).toBe('*/10 * * * *')
   })
 })

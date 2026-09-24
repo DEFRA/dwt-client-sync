@@ -1,11 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { mockAllCognitoCredentials } = vi.hoisted(() => ({
-  mockAllCognitoCredentials: vi.fn()
+const {
+  mockAcquireLock,
+  mockReleaseLock,
+  mockAllCognitoCredentials,
+  mockStore
+} = vi.hoisted(() => ({
+  mockAcquireLock: vi.fn(),
+  mockReleaseLock: vi.fn(),
+  mockAllCognitoCredentials: vi.fn(),
+  mockStore: vi.fn()
 }))
 
 vi.mock('#/common/helpers/cognito-client.js', () => ({
   allCognitoCredentials: mockAllCognitoCredentials
+}))
+
+vi.mock('#/services/clients.js', () => ({
+  store: mockStore
+}))
+
+vi.mock('#/common/helpers/mongo-lock.js', () => ({
+  acquireLock: mockAcquireLock,
+  releaseLock: mockReleaseLock
 }))
 
 vi.mock('#/config.js', () => ({
@@ -26,6 +43,14 @@ vi.mock('#/common/helpers/logging/logger.js', () => ({
 const { sync } = await import('./client-sync.js')
 
 describe('Software Provider sync', () => {
+  beforeAll(() => {
+    const mockLock = {
+      release: vi.fn()
+    }
+    mockAcquireLock.mockResolvedValue(mockLock)
+    mockReleaseLock.mockResolvedValue(mockLock)
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
   })

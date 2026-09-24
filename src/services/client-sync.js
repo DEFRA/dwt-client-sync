@@ -1,11 +1,14 @@
 import { allCognitoCredentials } from '#/common/helpers/cognito-client.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { config } from '#/config.js'
+import { acquireLock, releaseLock } from '#/common/helpers/mongo-lock.js'
+import { store } from '#/services/clients.js'
 
 const logger = createLogger()
 const { serviceSyncList } = config.get('cognito')
-async function sync() {
+async function sync(db, locker) {
   logger.info('Software Provider sync starting')
+  let lock
 
   const result = {
     totalServicesProcessed: 0,
@@ -24,6 +27,12 @@ async function sync() {
       logger.info('No services configured to sync, skipping.')
       return result
     } else {
+      lock = await acquireLock(locker, 'dwt-client-sync', logger)
+      if (!lock) {
+        logger?.info('DWT client sync already in progress elsewhere, skipping')
+        return result
+      }
+
       logger.info(`Syncing ${services.length} services: ${services.join(', ')}`)
 
       for (const service of services) {
@@ -42,17 +51,18 @@ async function sync() {
         )
 
         const softwareProviders = credentials.client_details.map(
-          ({ client_name: clientName, client_id: clientId }) => [
-            { text: clientName },
-            { text: clientId }
-          ]
+          ({ client_name: clientName, client_id: clientId }) => ({
+            clientId,
+            clientName,
+            tenantServiceName: service
+          })
         )
 
         logger.info(
           `Storing ${softwareProviders.length} software providers in the database`
         )
 
-        // ... actual DB write goes here
+        await store(logger, db, softwareProviders, service)
 
         result.services.push({
           serviceName: service,
@@ -67,6 +77,8 @@ async function sync() {
   } catch (error) {
     logger.error(`Error fetching Cognito credentials ${error}`)
     return result
+  } finally {
+    await releaseLock(lock, logger)
   }
 }
 
