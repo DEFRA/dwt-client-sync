@@ -246,3 +246,42 @@ describe('POST Clients sync', () => {
     expect(response.statusCode).toBe(500)
   })
 })
+
+describe('POST Clients', () => {
+  const auth = { strategy: 'basic', credentials: { username: 'test' } }
+  let server
+  let allCognitoCredentials
+  let clientSyncService
+
+  beforeAll(async () => {
+    allCognitoCredentials = (await import('#/common/helpers/cognito-client.js'))
+      .allCognitoCredentials
+    clientSyncService = await import('#/services/client-sync.js')
+    const { createServer } = await import('#/server.js')
+
+    server = await createServer()
+    await server.initialize()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+  it("rejects client names including characters that aren't alphanumeric or underscores", async () => {
+    const response = await server.inject({
+      method: 'POST',
+      url: '/clients',
+      auth,
+      payload: {
+        clientName: 'badName1 (^-^)'
+      }
+    })
+
+    expect(response.statusCode).toBe(400)
+    const responseBody = JSON.parse(response.payload)
+
+    expect(responseBody?.error).toBe('Bad Request')
+    expect(responseBody?.message).toBe(
+      'clientName may only consist of alphanumeric characters and underscores'
+    )
+  })
+})

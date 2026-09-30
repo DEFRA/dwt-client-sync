@@ -1,4 +1,5 @@
 import Boom from '@hapi/boom'
+import { clientSchema } from '#/common/helpers/validation.js'
 import { findClient, findClients } from '#/services/clients.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { sync } from '#/services/client-sync.js'
@@ -64,6 +65,31 @@ export const clients = [
         }
 
         return h.response(clientRecords)
+      } catch (err) {
+        logger.error(err.message)
+        return Boom.internal()
+      }
+    }
+  },
+  {
+    method: 'POST',
+    path: '/clients',
+    options: {
+      validate: {
+        payload: clientSchema
+      }
+    },
+    handler: async (request, h) => {
+      try {
+        const { db, locker } = request
+
+        // Sync
+        logger.info('Sync client called')
+        const result = await sync(db, locker)
+
+        return h.response({
+          result
+        })
       } catch (err) {
         logger.error(err.message)
         return Boom.internal()
