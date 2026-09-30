@@ -3,6 +3,7 @@ import { clientSchema } from '#/common/helpers/validation.js'
 import { findClient, findClients } from '#/services/clients.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { sync } from '#/services/client-sync.js'
+import { createCognitoCredential } from '#/common/helpers/cognito-client.js'
 
 const logger = createLogger()
 
@@ -87,8 +88,10 @@ export const clients = [
         logger.info('Sync client called')
         const result = await sync(db, locker)
 
+        // Return credentials
+        const clientDetails = credentials?.['client_details']?.[0]
         return h.response({
-          result
+          ...clientDetails
         })
       } catch (err) {
         logger.error(err.message)

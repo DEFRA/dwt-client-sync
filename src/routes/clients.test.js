@@ -1,5 +1,6 @@
 vi.mock('#/common/helpers/cognito-client.js', () => ({
-  allCognitoCredentials: vi.fn()
+  allCognitoCredentials: vi.fn(),
+  createCognitoCredential: vi.fn()
 }))
 
 describe('Client Routes', () => {
@@ -250,12 +251,13 @@ describe('POST Clients sync', () => {
 describe('POST Clients', () => {
   const auth = { strategy: 'basic', credentials: { username: 'test' } }
   let server
-  let allCognitoCredentials
+  let createCognitoCredential
   let clientSyncService
 
   beforeAll(async () => {
-    allCognitoCredentials = (await import('#/common/helpers/cognito-client.js'))
-      .allCognitoCredentials
+    createCognitoCredential = (
+      await import('#/common/helpers/cognito-client.js')
+    ).createCognitoCredential
     clientSyncService = await import('#/services/client-sync.js')
     const { createServer } = await import('#/server.js')
 
@@ -267,6 +269,19 @@ describe('POST Clients', () => {
     vi.spyOn(clientSyncService, 'sync').mockResolvedValue({
       totalServicesProcessed: 0,
       services: []
+    })
+
+    createCognitoCredential.mockResolvedValue({
+      cognito_user_pool_id: 'eu-west-2_EXAMPLE01',
+      request_id: 'my_request_id',
+      tenant_service_name: 'my-example-service',
+      client_details: [
+        {
+          client_name: 'goodName1',
+          client_id: 'my_client_id',
+          client_secret: 'my_client_secret'
+        }
+      ]
     })
   })
 
@@ -306,6 +321,25 @@ describe('POST Clients', () => {
     })
 
     expect(response.statusCode).toBe(200)
+    expect(clientSyncService.sync).toHaveBeenCalled()
+  })
+
+  it('returns created cognito credentials', async () => {
+    const response = await server.inject({
+      method: 'POST',
+      url: '/clients',
+      auth,
+      payload: {
+        clientName: 'goodName1'
+      }
+    })
+
+    const responseBody = JSON.parse(response.payload)
+    expect(responseBody).toStrictEqual({
+      client_name: 'goodName1',
+      client_id: 'my_client_id',
+      client_secret: 'my_client_secret'
+    })
     expect(clientSyncService.sync).toHaveBeenCalled()
   })
 })
