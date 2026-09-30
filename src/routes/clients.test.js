@@ -263,9 +263,17 @@ describe('POST Clients', () => {
     await server.initialize()
   })
 
+  beforeEach(() => {
+    vi.spyOn(clientSyncService, 'sync').mockResolvedValue({
+      totalServicesProcessed: 0,
+      services: []
+    })
+  })
+
   afterEach(() => {
     vi.restoreAllMocks()
   })
+
   it("rejects client names including characters that aren't alphanumeric or underscores", async () => {
     const response = await server.inject({
       method: 'POST',
@@ -283,5 +291,21 @@ describe('POST Clients', () => {
     expect(responseBody?.message).toBe(
       'clientName may only consist of alphanumeric characters and underscores'
     )
+
+    expect(clientSyncService.sync).not.toHaveBeenCalled()
+  })
+
+  it('syncs database when validation passes', async () => {
+    const response = await server.inject({
+      method: 'POST',
+      url: '/clients',
+      auth,
+      payload: {
+        clientName: 'goodName1'
+      }
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(clientSyncService.sync).toHaveBeenCalled()
   })
 })
