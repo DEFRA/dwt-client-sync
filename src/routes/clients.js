@@ -74,7 +74,7 @@ export const clients = [
   },
   {
     method: 'POST',
-    path: '/clients',
+    path: '/clients/{tenantServiceName}',
     options: {
       validate: {
         payload: clientSchema
@@ -82,11 +82,22 @@ export const clients = [
     },
     handler: async (request, h) => {
       try {
-        const { db, locker } = request
+        const {
+          db,
+          locker,
+          payload,
+          params: { tenantServiceName }
+        } = request
+
+        // Send creation request to cognito
+        const credentials = await createCognitoCredential(
+          tenantServiceName,
+          payload.clientName
+        )
 
         // Sync
         logger.info('Sync client called')
-        const result = await sync(db, locker)
+        await sync(db, locker)
 
         // Return credentials
         const clientDetails = credentials?.['client_details']?.[0]

@@ -292,7 +292,7 @@ describe('POST Clients', () => {
   it("rejects client names including characters that aren't alphanumeric or underscores", async () => {
     const response = await server.inject({
       method: 'POST',
-      url: '/clients',
+      url: '/clients/myTenantServiceName',
       auth,
       payload: {
         clientName: 'badName1 (^-^)'
@@ -313,7 +313,7 @@ describe('POST Clients', () => {
   it('syncs database when validation passes', async () => {
     const response = await server.inject({
       method: 'POST',
-      url: '/clients',
+      url: '/clients/myTenantServiceName',
       auth,
       payload: {
         clientName: 'goodName1'
@@ -327,7 +327,7 @@ describe('POST Clients', () => {
   it('returns created cognito credentials', async () => {
     const response = await server.inject({
       method: 'POST',
-      url: '/clients',
+      url: '/clients/myTenantServiceName',
       auth,
       payload: {
         clientName: 'goodName1'
