@@ -97,7 +97,14 @@ export const clients = [
 
         // Sync
         logger.info('Sync client called')
-        await sync(db, locker)
+        try {
+          await sync(db, locker)
+        } catch (err) {
+          // If credential creation succeeds but sync fails, log error, but still return 'success'
+          // Credential secrets cannot be retrieved later so must be returned
+          // Scheduled sync should fix the cache later
+          logger.error(`Sync failed with error: ${err.message}`)
+        }
 
         // Return credentials
         const clientDetails = credentials?.['client_details']?.[0]

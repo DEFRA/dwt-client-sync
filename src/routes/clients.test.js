@@ -1,3 +1,14 @@
+const mockLogger = {
+  info: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+  warn: vi.fn()
+}
+
+vi.mock('#/common/helpers/logging/logger.js', () => ({
+  createLogger: () => mockLogger
+}))
+
 vi.mock('#/common/helpers/cognito-client.js', () => ({
   allCognitoCredentials: vi.fn(),
   createCognitoCredential: vi.fn()
@@ -341,5 +352,31 @@ describe('POST Clients', () => {
       client_secret: 'my_client_secret'
     })
     expect(clientSyncService.sync).toHaveBeenCalled()
+  })
+
+  it('logs an error but still returns when sync fails', async () => {
+    vi.spyOn(clientSyncService, 'sync').mockRejectedValue(
+      new Error('Sync failed')
+    )
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/clients/myTenantServiceName',
+      auth,
+      payload: {
+        clientName: 'goodName1'
+      }
+    })
+
+    expect(response.statusCode).toBe(200)
+    const responseBody = JSON.parse(response.payload)
+    expect(responseBody).toStrictEqual({
+      client_name: 'goodName1',
+      client_id: 'my_client_id',
+      client_secret: 'my_client_secret'
+    })
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'Sync failed with error: Sync failed'
+    )
   })
 })
