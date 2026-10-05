@@ -76,7 +76,7 @@ async function sync(db, locker) {
     }
   } catch (error) {
     logger.error(`Error fetching Cognito credentials ${error}`)
-    return result
+    throw error
   } finally {
     await releaseLock(lock, logger)
   }
