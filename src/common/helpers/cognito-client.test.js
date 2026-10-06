@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import Boom from '@hapi/boom'
 
 const { mockGet, mockSign, mockPost } = vi.hoisted(() => ({
   mockGet: vi.fn(),
@@ -31,6 +32,7 @@ vi.mock('#/config.js', () => ({
       signerService: 'execute-api',
       listClientsPath: '/clients/{service-name}',
       rotateClientsPath: '/rotate-clients/{service-name}',
+      rotateTimeoutMs: 5000,
       protocol: 'https'
     }))
   }
@@ -43,7 +45,7 @@ vi.mock('#/common/helpers/logging/logger.js', () => ({
   }))
 }))
 
-const { allCognitoCredentials, rotateCognitoCredential } =
+const { allCognitoCredentials, rotateCognitoCredential, RotationError } =
   await import('./cognito-client.js')
 
 describe('allCognitoCredentials', () => {
@@ -153,14 +155,77 @@ describe('rotateCognitoCredential', () => {
     expect(options.payload).toBe(requestToSign.body)
   })
 
-  it('throws an error when the backend returns a non-200 status', async () => {
+  it('sets a timeout and encodes the service name in the path', async () => {
     mockPost.mockResolvedValue({
-      res: { statusCode: 500 },
-      payload: {}
+      res: { statusCode: 200 },
+      payload: rotatedCredentials
+    })
+
+    await rotateCognitoCredential('my service', 'my_client')
+
+    const [url, options] = mockPost.mock.calls[0]
+    expect(url).toBe('https://example.com/rotate-clients/my%20service')
+    expect(options.timeout).toBe(5000)
+  })
+
+  it('accepts any 2xx response', async () => {
+    mockPost.mockResolvedValue({
+      res: { statusCode: 201 },
+      payload: rotatedCredentials
     })
 
     await expect(
       rotateCognitoCredential('my-service', 'my_client')
-    ).rejects.toThrow('Failed to rotate Cognito credentials. Status code: 500')
+    ).resolves.toEqual(rotatedCredentials)
+  })
+
+  // Wreck's shortcut methods throw a Boom error for 4xx/5xx responses
+  const responseError = (statusCode) =>
+    new Boom.Boom(`Response Error: ${statusCode}`, {
+      statusCode,
+      data: { isResponseError: true }
+    })
+
+  it('reports a known failure when CDP refuses the request', async () => {
+    mockPost.mockRejectedValue(responseError(403))
+
+    const error = await rotateCognitoCredential(
+      'my-service',
+      'my_client'
+    ).catch((err) => err)
+
+    expect(error).toBeInstanceOf(RotationError)
+    expect(error.outcomeUnknown).toBe(false)
+    expect(error.message).toBe(
+      'Failed to rotate Cognito credentials: Response Error: 403'
+    )
+  })
+
+  it.each([
+    ['CDP returns a server error', responseError(503)],
+    ['the request times out', Boom.gatewayTimeout('Client request timeout')],
+    ['the connection fails', new Error('socket hang up')]
+  ])('reports an unknown outcome when %s', async (_, err) => {
+    mockPost.mockRejectedValue(err)
+
+    const error = await rotateCognitoCredential(
+      'my-service',
+      'my_client'
+    ).catch((e) => e)
+
+    expect(error).toBeInstanceOf(RotationError)
+    expect(error.outcomeUnknown).toBe(true)
+  })
+
+  it('reports a known failure for a non-2xx response below 400', async () => {
+    mockPost.mockResolvedValue({ res: { statusCode: 302 }, payload: null })
+
+    const error = await rotateCognitoCredential(
+      'my-service',
+      'my_client'
+    ).catch((err) => err)
+
+    expect(error).toBeInstanceOf(RotationError)
+    expect(error.outcomeUnknown).toBe(false)
   })
 })

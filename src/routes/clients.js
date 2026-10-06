@@ -1,8 +1,22 @@
 import Boom from '@hapi/boom'
+import Joi from 'joi'
 import { findClient, findClients } from '#/services/clients.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { sync } from '#/services/client-sync.js'
-import { rotateCognitoCredential } from '#/common/helpers/cognito-client.js'
+import {
+  rotateCognitoCredential,
+  RotationError
+} from '#/common/helpers/cognito-client.js'
+
+// CDP service names are lowercase kebab-case; Cognito client ids match [\w+]+
+const rotateParamsSchema = Joi.object({
+  tenantServiceName: Joi.string()
+    .pattern(/^[a-z0-9-]+$/)
+    .required(),
+  clientId: Joi.string()
+    .pattern(/^[\w+]+$/)
+    .required()
+})
 
 const logger = createLogger()
 
@@ -74,12 +88,26 @@ export const clients = [
   {
     method: 'POST',
     path: '/clients/{tenantServiceName}/{clientId}/rotate',
+    options: {
+      validate: {
+        params: rotateParamsSchema
+      },
+      // Responses can hold a client secret
+      cache: {
+        otherwise: 'no-store'
+      }
+    },
     handler: async (request, h) => {
       try {
         const {
           db,
+          auth,
           params: { tenantServiceName, clientId }
         } = request
+
+        logger.info(
+          `Client secret rotation requested by ${auth.credentials.username} for client ${clientId} of ${tenantServiceName}`
+        )
 
         // Cognito rotates by client name, which the stored client gives us
         const client = await findClient(tenantServiceName, clientId, db)
@@ -114,12 +142,27 @@ export const clients = [
           return Boom.notFound()
         }
 
+        logger.info(
+          `Rotated client secret for client ${clientId} of ${tenantServiceName}`
+        )
+
         // Only time the new secret is available, so it must be returned
         return h.response({
           ...clientDetails
         })
       } catch (err) {
         logger.error(err.message)
+
+        if (err instanceof RotationError) {
+          // A retry rotates again, and a client holds at most two secrets,
+          // so retrying blind can remove the secret the caller still uses
+          return err.outcomeUnknown
+            ? Boom.badGateway(
+                'Rotation outcome unknown: a new secret may have been issued. Check the client before retrying.'
+              )
+            : Boom.badGateway('CDP refused the rotation request')
+        }
+
         return Boom.internal()
       }
     }

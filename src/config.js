@@ -182,6 +182,12 @@ export const config = convict({
       default:
         '/tenants/services/{service-name}/user-pool/rotate-client-credentials',
       env: 'COGNITO_ROTATE_CLIENTS_PATH'
+    },
+    rotateTimeoutMs: {
+      doc: 'Timeout in milliseconds for the Cognito rotate client credentials request',
+      format: 'nat',
+      default: 10000,
+      env: 'COGNITO_ROTATE_TIMEOUT_MS'
     }
   }
 })
