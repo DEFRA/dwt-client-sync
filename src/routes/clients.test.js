@@ -1,5 +1,17 @@
+const mockLogger = {
+  info: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+  warn: vi.fn()
+}
+
+vi.mock('#/common/helpers/logging/logger.js', () => ({
+  createLogger: () => mockLogger
+}))
+
 vi.mock('#/common/helpers/cognito-client.js', () => ({
-  allCognitoCredentials: vi.fn()
+  allCognitoCredentials: vi.fn(),
+  rotateCognitoCredential: vi.fn()
 }))
 
 describe('Client Routes', () => {
@@ -244,5 +256,113 @@ describe('POST Clients sync', () => {
     })
 
     expect(response.statusCode).toBe(500)
+  })
+})
+
+describe('POST Clients rotate', () => {
+  const auth = { strategy: 'basic', credentials: { username: 'test' } }
+  const tenantServiceName = 'waste-movement-external-api'
+  const clientId = 'my_client_id'
+  const url = `/clients/${tenantServiceName}/${clientId}/rotate`
+  const rotatedClient = {
+    client_name: 'Test Client',
+    client_id: clientId,
+    client_secret: 'my_new_client_secret'
+  }
+  let server
+  let rotateCognitoCredential
+  let clientService
+
+  beforeAll(async () => {
+    rotateCognitoCredential = (
+      await import('#/common/helpers/cognito-client.js')
+    ).rotateCognitoCredential
+    clientService = await import('#/services/clients.js')
+    const { createServer } = await import('#/server.js')
+
+    server = await createServer()
+    await server.initialize()
+  })
+
+  beforeEach(() => {
+    vi.spyOn(clientService, 'findClient').mockResolvedValue({
+      clientName: 'Test Client',
+      clientId,
+      tenantServiceName
+    })
+
+    rotateCognitoCredential.mockResolvedValue({
+      cognito_user_pool_id: 'eu-west-2_EXAMPLE01',
+      request_id: 'my_request_id',
+      tenant_service_name: tenantServiceName,
+      client_details: [rotatedClient]
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('returns the rotated credentials', async () => {
+    const response = await server.inject({ method: 'POST', url, auth })
+
+    expect(response.statusCode).toBe(200)
+    expect(JSON.parse(response.payload)).toStrictEqual(rotatedClient)
+    expect(rotateCognitoCredential).toHaveBeenCalledWith(
+      tenantServiceName,
+      'Test Client'
+    )
+  })
+
+  it('returns a 404 error without rotating when the client is not stored', async () => {
+    clientService.findClient.mockResolvedValue(null)
+
+    const response = await server.inject({ method: 'POST', url, auth })
+
+    expect(response.statusCode).toBe(404)
+    expect(rotateCognitoCredential).not.toHaveBeenCalled()
+  })
+
+  it('returns a 404 error when Cognito skips the client', async () => {
+    rotateCognitoCredential.mockResolvedValue({ client_details: [] })
+
+    const response = await server.inject({ method: 'POST', url, auth })
+
+    expect(response.statusCode).toBe(404)
+  })
+
+  it('returns only this client and warns when others share its name', async () => {
+    rotateCognitoCredential.mockResolvedValue({
+      client_details: [
+        {
+          client_name: 'Test Client',
+          client_id: 'other_client_id',
+          client_secret: 'other_secret'
+        },
+        rotatedClient
+      ]
+    })
+
+    const response = await server.inject({ method: 'POST', url, auth })
+
+    expect(response.statusCode).toBe(200)
+    expect(JSON.parse(response.payload)).toStrictEqual(rotatedClient)
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      `Rotating client ${clientId} also rotated 1 other client(s) with the same name`
+    )
+  })
+
+  it('returns a 500 error when rotation fails', async () => {
+    rotateCognitoCredential.mockRejectedValue(new Error('Cognito error'))
+
+    const response = await server.inject({ method: 'POST', url, auth })
+
+    expect(response.statusCode).toBe(500)
+  })
+
+  it('returns a 401 error without credentials', async () => {
+    const response = await server.inject({ method: 'POST', url })
+
+    expect(response.statusCode).toBe(401)
   })
 })

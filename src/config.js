@@ -175,6 +175,13 @@ export const config = convict({
       format: String,
       default: 'waste-movement-external-api',
       env: 'COGNITO_SERVICE_SYNC_LIST'
+    },
+    rotateClientsPath: {
+      doc: 'Path for the Cognito rotate client credentials endpoint',
+      format: String,
+      default:
+        '/tenants/services/{service-name}/user-pool/rotate-client-credentials',
+      env: 'COGNITO_ROTATE_CLIENTS_PATH'
     }
   }
 })
