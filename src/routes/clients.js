@@ -8,6 +8,14 @@ import {
   RotationError
 } from '#/common/helpers/cognito-client.js'
 
+// A retry rotates again, and a client holds at most two secrets, so
+// retrying blind can remove the secret the caller still uses. Per the CDP
+// portal API docs ("Rotate client credentials"): "A new secret is issued and
+// the existing secret is retained... If it already has two, the oldest is
+// removed to make room." TODO: link the page once I have portal access
+const OUTCOME_UNKNOWN_MESSAGE =
+  'Rotation outcome unknown: a new secret may have been issued. Check the client before retrying.'
+
 // CDP service names are lowercase kebab-case; Cognito client ids match [\w+]+
 const rotateParamsSchema = Joi.object({
   tenantServiceName: Joi.string()
@@ -121,9 +129,23 @@ export const clients = [
           client.clientName
         )
 
-        // Names aren't unique in Cognito, so pick out this client. Cognito
-        // skips clients it doesn't know, leaving no matching entry
-        const rotatedClients = credentials?.['client_details'] ?? []
+        const rotatedClients = credentials?.['client_details']
+
+        // A success response we can't read: CDP may still have rotated
+        if (!Array.isArray(rotatedClients)) {
+          logger.error(
+            `CDP's rotate response for client ${clientId} has no client details`
+          )
+          return Boom.badGateway(OUTCOME_UNKNOWN_MESSAGE)
+        }
+
+        // CDP skips clients it doesn't know, leaving nothing rotated
+        if (rotatedClients.length === 0) {
+          logger.error(`Cognito did not rotate client ${clientId}`)
+          return Boom.notFound()
+        }
+
+        // Names aren't unique in Cognito, so pick out this client
         const clientDetails = rotatedClients.find(
           (details) => details.client_id === clientId
         )
@@ -137,9 +159,14 @@ export const clients = [
           )
         }
 
+        // CDP rotated other clients with the stored name, but not this one
         if (!clientDetails) {
-          logger.error(`Cognito did not rotate client ${clientId}`)
-          return Boom.notFound()
+          logger.error(
+            `Client ${clientId} is out of date: its name belongs to a different client in Cognito`
+          )
+          return Boom.conflict(
+            'The stored client is out of date: its name belongs to a different client'
+          )
         }
 
         logger.info(
@@ -154,12 +181,8 @@ export const clients = [
         logger.error(err.message)
 
         if (err instanceof RotationError) {
-          // A retry rotates again, and a client holds at most two secrets,
-          // so retrying blind can remove the secret the caller still uses
           return err.outcomeUnknown
-            ? Boom.badGateway(
-                'Rotation outcome unknown: a new secret may have been issued. Check the client before retrying.'
-              )
+            ? Boom.badGateway(OUTCOME_UNKNOWN_MESSAGE)
             : Boom.badGateway('CDP refused the rotation request')
         }
 

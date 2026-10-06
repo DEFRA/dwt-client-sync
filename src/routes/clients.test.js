@@ -396,12 +396,40 @@ describe('POST Clients rotate', () => {
     )
   })
 
-  it('returns a 404 error when CDP returns no payload', async () => {
-    rotateCognitoCredential.mockResolvedValue(null)
+  it.each([
+    ['no payload', null],
+    ['no client details', { request_id: 'my_request_id' }]
+  ])(
+    'returns a 502 error with an unknown outcome when CDP succeeds with %s',
+    async (_, payload) => {
+      rotateCognitoCredential.mockResolvedValue(payload)
+
+      const response = await server.inject({ method: 'POST', url, auth })
+
+      expect(response.statusCode).toBe(502)
+      expect(JSON.parse(response.payload).message).toBe(
+        'Rotation outcome unknown: a new secret may have been issued. Check the client before retrying.'
+      )
+    }
+  )
+
+  it('returns a 409 error when CDP rotates a different client with the stored name', async () => {
+    rotateCognitoCredential.mockResolvedValue({
+      client_details: [
+        {
+          client_name: 'Test Client',
+          client_id: 'other_client_id',
+          client_secret: 'other_secret'
+        }
+      ]
+    })
 
     const response = await server.inject({ method: 'POST', url, auth })
 
-    expect(response.statusCode).toBe(404)
+    expect(response.statusCode).toBe(409)
+    expect(JSON.parse(response.payload).message).toBe(
+      'The stored client is out of date: its name belongs to a different client'
+    )
   })
 
   it('tells clients not to store the response', async () => {
