@@ -118,6 +118,8 @@ describe('createCognitoCredential', () => {
 
     expect(result).toEqual(expectedResult)
     expect(mockSign).toHaveBeenCalledTimes(1)
+    const [actualBodyToSign] = mockSign.mock.calls[0]
+    expect(actualBodyToSign.body).toBe('{"client_names":["new-client"]}')
     expect(mockPost).toHaveBeenCalledTimes(1)
     const [url, options] = mockPost.mock.calls[0]
     expect(url).toBe('https://example.com/create-clients/my-service')
