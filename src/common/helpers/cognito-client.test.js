@@ -205,7 +205,7 @@ describe('rotateCognitoCredential', () => {
     expect(requestToSign.body).toBe(
       JSON.stringify({ client_names: ['my_client'] })
     )
-    const [, options] = mockPost.mock.calls[0]
+    const options = mockPost.mock.calls[0][1]
     expect(options.payload).toBe(requestToSign.body)
   })
 
