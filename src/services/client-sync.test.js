@@ -134,12 +134,7 @@ describe('Software Provider sync', () => {
   it('handles errors fetching credentials', async () => {
     mockAllCognitoCredentials.mockRejectedValue(new Error('Backend error'))
 
-    const result = await sync()
-
-    expect(result).toEqual({
-      totalServicesProcessed: 0,
-      services: []
-    })
+    await expect(sync()).rejects.toThrow('Backend error')
   })
 
   it('trims service names and ignores empty values', async () => {

@@ -1,5 +1,17 @@
+const mockLogger = {
+  info: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+  warn: vi.fn()
+}
+
+vi.mock('#/common/helpers/logging/logger.js', () => ({
+  createLogger: () => mockLogger
+}))
+
 vi.mock('#/common/helpers/cognito-client.js', () => ({
-  allCognitoCredentials: vi.fn()
+  allCognitoCredentials: vi.fn(),
+  createCognitoCredential: vi.fn()
 }))
 
 describe('Client Routes', () => {
@@ -244,5 +256,148 @@ describe('POST Clients sync', () => {
     })
 
     expect(response.statusCode).toBe(500)
+  })
+})
+
+describe('POST Clients', () => {
+  const auth = { strategy: 'basic', credentials: { username: 'test' } }
+  let server
+  let createCognitoCredential
+  let clientSyncService
+
+  beforeAll(async () => {
+    createCognitoCredential = (
+      await import('#/common/helpers/cognito-client.js')
+    ).createCognitoCredential
+    clientSyncService = await import('#/services/client-sync.js')
+    const { createServer } = await import('#/server.js')
+
+    server = await createServer()
+    await server.initialize()
+  })
+
+  beforeEach(() => {
+    vi.spyOn(clientSyncService, 'sync').mockResolvedValue({
+      totalServicesProcessed: 0,
+      services: []
+    })
+
+    createCognitoCredential.mockResolvedValue({
+      cognito_user_pool_id: 'eu-west-2_EXAMPLE01',
+      request_id: 'my_request_id',
+      tenant_service_name: 'my-example-service',
+      client_details: [
+        {
+          client_name: 'goodName1-_.',
+          client_id: 'my_client_id',
+          client_secret: 'my_client_secret'
+        }
+      ]
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it("rejects client names that don't match the regex pattern ^[\\w.-]+$", async () => {
+    const response = await server.inject({
+      method: 'POST',
+      url: '/clients/myTenantServiceName',
+      auth,
+      payload: {
+        clientName: 'badName1 =(^@+@^)='
+      }
+    })
+
+    expect(response.statusCode).toBe(400)
+    const responseBody = JSON.parse(response.payload)
+
+    expect(responseBody?.error).toBe('Bad Request')
+    expect(responseBody?.message).toBe(
+      'clientName must fit the regex pattern ^[\\w.-]+$'
+    )
+
+    expect(clientSyncService.sync).not.toHaveBeenCalled()
+  })
+
+  it('rejects client names longer than 128 characters', async () => {
+    const response = await server.inject({
+      method: 'POST',
+      url: '/clients/myTenantServiceName',
+      auth,
+      payload: {
+        clientName: 'x'.repeat(129)
+      }
+    })
+
+    expect(response.statusCode).toBe(400)
+    const responseBody = JSON.parse(response.payload)
+
+    expect(responseBody?.error).toBe('Bad Request')
+    expect(responseBody?.message).toBe(
+      'clientName must be 128 characters or fewer'
+    )
+
+    expect(clientSyncService.sync).not.toHaveBeenCalled()
+  })
+
+  it('syncs database when validation passes', async () => {
+    const response = await server.inject({
+      method: 'POST',
+      url: '/clients/myTenantServiceName',
+      auth,
+      payload: {
+        clientName: 'goodName1-_.'
+      }
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(clientSyncService.sync).toHaveBeenCalled()
+  })
+
+  it('returns created cognito credentials', async () => {
+    const response = await server.inject({
+      method: 'POST',
+      url: '/clients/myTenantServiceName',
+      auth,
+      payload: {
+        clientName: 'goodName1-_.'
+      }
+    })
+
+    const responseBody = JSON.parse(response.payload)
+    expect(responseBody).toStrictEqual({
+      client_name: 'goodName1-_.',
+      client_id: 'my_client_id',
+      client_secret: 'my_client_secret'
+    })
+    expect(clientSyncService.sync).toHaveBeenCalled()
+  })
+
+  it('logs an error but still returns when sync fails', async () => {
+    vi.spyOn(clientSyncService, 'sync').mockRejectedValue(
+      new Error('Sync failed')
+    )
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/clients/myTenantServiceName',
+      auth,
+      payload: {
+        clientName: 'goodName1-_.'
+      }
+    })
+
+    expect(response.statusCode).toBe(200)
+    const responseBody = JSON.parse(response.payload)
+    expect(responseBody).toStrictEqual({
+      client_name: 'goodName1-_.',
+      client_id: 'my_client_id',
+      client_secret: 'my_client_secret'
+    })
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'Sync failed with error: Sync failed'
+    )
   })
 })
