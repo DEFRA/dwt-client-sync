@@ -1,9 +1,11 @@
 import Boom from '@hapi/boom'
 import Joi from 'joi'
+import { clientSchema } from '#/common/helpers/validation.js'
 import { findClient, findClients } from '#/services/clients.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { sync } from '#/services/client-sync.js'
 import {
+  createCognitoCredential,
   rotateCognitoCredential,
   RotationError
 } from '#/common/helpers/cognito-client.js'
@@ -87,6 +89,51 @@ export const clients = [
         }
 
         return h.response(clientRecords)
+      } catch (err) {
+        logger.error(err.message)
+        return Boom.internal()
+      }
+    }
+  },
+  {
+    method: 'POST',
+    path: '/clients/{tenantServiceName}',
+    options: {
+      validate: {
+        payload: clientSchema
+      }
+    },
+    handler: async (request, h) => {
+      try {
+        const {
+          db,
+          locker,
+          payload,
+          params: { tenantServiceName }
+        } = request
+
+        // Send creation request to cognito
+        const credentials = await createCognitoCredential(
+          tenantServiceName,
+          payload.clientName
+        )
+
+        // Sync
+        logger.info('Sync client called')
+        try {
+          await sync(db, locker)
+        } catch (err) {
+          // If credential creation succeeds but sync fails, log error, but still return 'success'
+          // Credential secrets cannot be retrieved later so must be returned
+          // Scheduled sync should fix the cache later
+          logger.error(`Sync failed with error: ${err.message}`)
+        }
+
+        // Return credentials
+        const clientDetails = credentials?.['client_details']?.[0]
+        return h.response({
+          ...clientDetails
+        })
       } catch (err) {
         logger.error(err.message)
         return Boom.internal()

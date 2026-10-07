@@ -12,6 +12,7 @@ const {
   region,
   signerService,
   listClientsPath,
+  createClientsPath,
   rotateClientsPath,
   rotateTimeoutMs,
   protocol
@@ -72,6 +73,55 @@ async function allCognitoCredentials(serviceName) {
 
   logger.info(
     'Successfully fetched all Cognito credentials from the backend service.'
+  )
+
+  return payload
+}
+
+async function createCognitoCredential(serviceName, newClientName) {
+  logger.info('Creating new Cognito credentials')
+
+  const path = createClientsPath.replace('{service-name}', serviceName)
+
+  const requestToSign = new HttpRequest({
+    method: 'POST',
+    protocol,
+    hostname: baseUrl,
+    path,
+    headers: {
+      host: baseUrl,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      client_names: [newClientName]
+    })
+  })
+
+  const signed = await signer.sign(requestToSign)
+
+  const uri = `${protocol}://${baseUrl}${path}`
+
+  logger.info(uri)
+
+  const { res, payload } = await Wreck.post(uri, {
+    headers: signed.headers,
+    json: true,
+    payload: signed.body
+  })
+
+  if (res.statusCode !== 200) {
+    logger.error(
+      `failed to create Cognito credentials.
+      Status code: ${res.statusCode}`
+    )
+    throw new Error(
+      `Failed to create Cognito credentials.
+      Status code: ${res.statusCode}`
+    )
+  }
+
+  logger.info(
+    'Successfully created Cognito credentials from the backend service.'
   )
 
   return payload
@@ -140,4 +190,9 @@ async function rotateCognitoCredential(serviceName, clientName) {
   return response.payload
 }
 
-export { allCognitoCredentials, rotateCognitoCredential, RotationError }
+export {
+  allCognitoCredentials,
+  createCognitoCredential,
+  rotateCognitoCredential,
+  RotationError
+}

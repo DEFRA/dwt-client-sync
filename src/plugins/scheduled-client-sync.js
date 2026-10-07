@@ -18,9 +18,12 @@ export const scheduledClientSync = {
         async () => {
           logger.info(`Scheduled client sync starting`)
 
-          const results = await sync(db, locker)
-
-          logger.info(results)
+          try {
+            const results = await sync(db, locker)
+            logger.info(results)
+          } catch (err) {
+            logger.error(`Scheduled client sync failed: ${err.message}`)
+          }
 
           logger.info(`Scheduled client sync finished`)
         },

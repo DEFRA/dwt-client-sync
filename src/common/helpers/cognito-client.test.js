@@ -31,6 +31,7 @@ vi.mock('#/config.js', () => ({
       region: 'eu-west-2',
       signerService: 'execute-api',
       listClientsPath: '/clients/{service-name}',
+      createClientsPath: '/create-clients/{service-name}',
       rotateClientsPath: '/rotate-clients/{service-name}',
       rotateTimeoutMs: 5000,
       protocol: 'https'
@@ -45,8 +46,12 @@ vi.mock('#/common/helpers/logging/logger.js', () => ({
   }))
 }))
 
-const { allCognitoCredentials, rotateCognitoCredential, RotationError } =
-  await import('./cognito-client.js')
+const {
+  allCognitoCredentials,
+  createCognitoCredential,
+  rotateCognitoCredential,
+  RotationError
+} = await import('./cognito-client.js')
 
 describe('allCognitoCredentials', () => {
   beforeEach(() => {
@@ -95,6 +100,55 @@ describe('allCognitoCredentials', () => {
 
     await expect(allCognitoCredentials('my-service')).rejects.toThrow(
       'Failed to fetch Cognito credentials. Status code: 500'
+    )
+    expect(mockSign).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('createCognitoCredential', () => {
+  it('returns created credentials successfully', async () => {
+    const expectedResult = [
+      {
+        clientId: 'client-456',
+        clientSecret: 'secret'
+      }
+    ]
+
+    mockPost.mockResolvedValue({
+      res: {
+        statusCode: 200
+      },
+      payload: expectedResult
+    })
+
+    const result = await createCognitoCredential('my-service', 'new-client')
+
+    expect(result).toEqual(expectedResult)
+    expect(mockSign).toHaveBeenCalledTimes(1)
+    const [actualBodyToSign] = mockSign.mock.calls[0]
+    expect(actualBodyToSign.headers).toStrictEqual({
+      'content-type': 'application/json',
+      host: 'example.com'
+    })
+    expect(actualBodyToSign.body).toBe('{"client_names":["new-client"]}')
+    expect(mockPost).toHaveBeenCalledTimes(1)
+    const [url, options] = mockPost.mock.calls[0]
+    expect(url).toBe('https://example.com/create-clients/my-service')
+    expect(options.json).toBe(true)
+  })
+
+  it('throws an error when the backend returns a non-200 status', async () => {
+    mockPost.mockResolvedValue({
+      res: {
+        statusCode: 500
+      },
+      payload: {}
+    })
+
+    await expect(
+      createCognitoCredential('my-service', 'new-client')
+    ).rejects.toThrow(
+      'Failed to create Cognito credentials.\n      Status code: 500'
     )
     expect(mockSign).toHaveBeenCalledTimes(1)
   })
