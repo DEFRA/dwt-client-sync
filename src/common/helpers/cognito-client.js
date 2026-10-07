@@ -74,11 +74,12 @@ async function createCognitoCredential(serviceName, newClientName) {
     hostname: baseUrl,
     path,
     headers: {
-      host: baseUrl
+      host: baseUrl,
+      'content-type': 'application/json',
     },
-    body: {
+    body: JSON.stringify({
       client_names: [newClientName]
-    }
+    })
   })
 
   const signed = await signer.sign(requestToSign)
