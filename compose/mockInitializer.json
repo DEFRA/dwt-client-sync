@@ -25,5 +25,53 @@
         ]
       }
     }
+  },
+  {
+    "httpRequest": {
+      "method": "POST",
+      "path": "/tenants/services/waste-movement-external-api/user-pool/rotate-client-credentials",
+      "body": {
+        "type": "JSON",
+        "json": {
+          "client_names": ["Acme Waste Software"]
+        }
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["application/json"]
+      },
+      "body": {
+        "cognito_user_pool_id": "eu-west-2_EXAMPLE01",
+        "request_id": "3f8812b4c0a94e5d8f6e2a1b7c9d0e3f",
+        "tenant_service_name": "waste-movement-external-api",
+        "client_details": [
+          {
+            "client_name": "Acme Waste Software",
+            "client_id": "1a2b3c4d5e6f7g8h9i0j",
+            "client_secret": "local-rotated-secret"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "httpRequest": {
+      "method": "POST",
+      "path": "/tenants/services/waste-movement-external-api/user-pool/rotate-client-credentials"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["application/json"]
+      },
+      "body": {
+        "cognito_user_pool_id": "eu-west-2_EXAMPLE01",
+        "request_id": "5a1c3e7f9b2d4a6c8e0f1a3b5c7d9e1f",
+        "tenant_service_name": "waste-movement-external-api",
+        "client_details": []
+      }
+    }
   }
 ]

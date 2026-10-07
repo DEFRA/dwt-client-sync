@@ -2,8 +2,10 @@ import convict from 'convict'
 import convictFormatWithValidator from 'convict-format-with-validator'
 
 import { convictValidateMongoUri } from '#/common/helpers/convict/validate-mongo-uri.js'
+import { convictValidatePositiveInt } from '#/common/helpers/convict/validate-positive-int.js'
 
 convict.addFormat(convictValidateMongoUri)
+convict.addFormat(convictValidatePositiveInt)
 convict.addFormats(convictFormatWithValidator)
 
 const isProduction = process.env.NODE_ENV === 'production'
@@ -181,6 +183,22 @@ export const config = convict({
       format: String,
       default: '/tenants/services/{service-name}/user-pool/create-clients',
       env: 'COGNITO_CREATE_CLIENTS_PATH'
+    },
+    rotateClientsPath: {
+      doc: 'Path for the Cognito rotate client credentials endpoint',
+      format: String,
+      default:
+        '/tenants/services/{service-name}/user-pool/rotate-client-credentials',
+      env: 'COGNITO_ROTATE_CLIENTS_PATH'
+    },
+    rotateTimeoutMs: {
+      // Must be positive: Wreck treats a timeout of 0 as no timeout. Wreck
+      // applies it to the request and to reading the response separately,
+      // so the longest wait is about twice this
+      doc: 'Timeout in milliseconds for the Cognito rotate client credentials request',
+      format: 'positive-int',
+      default: 10000,
+      env: 'COGNITO_ROTATE_TIMEOUT_MS'
     }
   }
 })
