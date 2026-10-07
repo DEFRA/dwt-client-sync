@@ -300,7 +300,7 @@ describe('POST Clients', () => {
     vi.restoreAllMocks()
   })
 
-  it("rejects client names that don't match the regex pattern ^[\\w\\s.-]+$", async () => {
+  it("rejects client names that don't match the regex pattern ^[\\w.-]+$", async () => {
     const response = await server.inject({
       method: 'POST',
       url: '/clients/myTenantServiceName',
@@ -315,7 +315,28 @@ describe('POST Clients', () => {
 
     expect(responseBody?.error).toBe('Bad Request')
     expect(responseBody?.message).toBe(
-      'clientName must fit the regex pattern ^[\\w\\s.-]+$'
+      'clientName must fit the regex pattern ^[\\w.-]+$'
+    )
+
+    expect(clientSyncService.sync).not.toHaveBeenCalled()
+  })
+
+  it('rejects client names longer than 128 characters', async () => {
+    const response = await server.inject({
+      method: 'POST',
+      url: '/clients/myTenantServiceName',
+      auth,
+      payload: {
+        clientName: 'x'.repeat(129)
+      }
+    })
+
+    expect(response.statusCode).toBe(400)
+    const responseBody = JSON.parse(response.payload)
+
+    expect(responseBody?.error).toBe('Bad Request')
+    expect(responseBody?.message).toBe(
+      'clientName must be 128 characters or fewer'
     )
 
     expect(clientSyncService.sync).not.toHaveBeenCalled()
