@@ -75,7 +75,7 @@ async function createCognitoCredential(serviceName, newClientName) {
     path,
     headers: {
       host: baseUrl,
-      'content-type': 'application/json',
+      'content-type': 'application/json'
     },
     body: JSON.stringify({
       client_names: [newClientName]

@@ -288,7 +288,7 @@ describe('POST Clients', () => {
       tenant_service_name: 'my-example-service',
       client_details: [
         {
-          client_name: 'goodName1',
+          client_name: 'goodName1-_.',
           client_id: 'my_client_id',
           client_secret: 'my_client_secret'
         }
@@ -300,13 +300,13 @@ describe('POST Clients', () => {
     vi.restoreAllMocks()
   })
 
-  it("rejects client names including characters that aren't alphanumeric or underscores", async () => {
+  it("rejects client names that don't match the regex pattern ^[\\w\\s.-]+$", async () => {
     const response = await server.inject({
       method: 'POST',
       url: '/clients/myTenantServiceName',
       auth,
       payload: {
-        clientName: 'badName1 (^-^)'
+        clientName: 'badName1 =(^@+@^)='
       }
     })
 
@@ -315,7 +315,7 @@ describe('POST Clients', () => {
 
     expect(responseBody?.error).toBe('Bad Request')
     expect(responseBody?.message).toBe(
-      'clientName may only consist of alphanumeric characters and underscores'
+      'clientName must fit the regex pattern ^[\\w\\s.-]+$'
     )
 
     expect(clientSyncService.sync).not.toHaveBeenCalled()
@@ -327,7 +327,7 @@ describe('POST Clients', () => {
       url: '/clients/myTenantServiceName',
       auth,
       payload: {
-        clientName: 'goodName1'
+        clientName: 'goodName1-_.'
       }
     })
 
@@ -341,13 +341,13 @@ describe('POST Clients', () => {
       url: '/clients/myTenantServiceName',
       auth,
       payload: {
-        clientName: 'goodName1'
+        clientName: 'goodName1-_.'
       }
     })
 
     const responseBody = JSON.parse(response.payload)
     expect(responseBody).toStrictEqual({
-      client_name: 'goodName1',
+      client_name: 'goodName1-_.',
       client_id: 'my_client_id',
       client_secret: 'my_client_secret'
     })
@@ -364,14 +364,14 @@ describe('POST Clients', () => {
       url: '/clients/myTenantServiceName',
       auth,
       payload: {
-        clientName: 'goodName1'
+        clientName: 'goodName1-_.'
       }
     })
 
     expect(response.statusCode).toBe(200)
     const responseBody = JSON.parse(response.payload)
     expect(responseBody).toStrictEqual({
-      client_name: 'goodName1',
+      client_name: 'goodName1-_.',
       client_id: 'my_client_id',
       client_secret: 'my_client_secret'
     })
