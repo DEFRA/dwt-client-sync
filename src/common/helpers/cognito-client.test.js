@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import Boom from '@hapi/boom'
 
-const { mockGet, mockSign, mockPost } = vi.hoisted(() => ({
+const { mockGet, mockSign, mockPost, mockDelete } = vi.hoisted(() => ({
   mockGet: vi.fn(),
   mockSign: vi.fn(),
-  mockPost: vi.fn()
+  mockPost: vi.fn(),
+  mockDelete: vi.fn()
 }))
 
 vi.mock('@aws-sdk/signature-v4', () => ({
@@ -20,7 +21,8 @@ vi.mock('@aws-sdk/credential-provider-node', () => ({
 vi.mock('@hapi/wreck', () => ({
   default: {
     get: mockGet,
-    post: mockPost
+    post: mockPost,
+    delete: mockDelete
   }
 }))
 
@@ -32,6 +34,7 @@ vi.mock('#/config.js', () => ({
       signerService: 'execute-api',
       listClientsPath: '/clients/{service-name}',
       createClientsPath: '/create-clients/{service-name}',
+      deleteClientsPath: '/delete-clients/{service_name}',
       rotateClientsPath: '/rotate-clients/{service-name}',
       rotateTimeoutMs: 5000,
       protocol: 'https'
@@ -50,6 +53,7 @@ const {
   allCognitoCredentials,
   createCognitoCredential,
   rotateCognitoCredential,
+  deleteCognitoCredential,
   RotationError
 } = await import('./cognito-client.js')
 
@@ -282,4 +286,91 @@ describe('rotateCognitoCredential', () => {
     expect(error).toBeInstanceOf(RotationError)
     expect(error.outcomeUnknown).toBe(false)
   })
+})
+
+describe('deleteCognitoCredential', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    mockSign.mockImplementation(async (request) => ({
+      headers: { ...request.headers, Authorization: 'mocked-signature' },
+      body: request.body
+    }))
+  })
+
+  it('returns deleted credentials successfully', async () => {
+    mockDelete.mockResolvedValue({
+      res: { statusCode: 200 },
+      payload: []
+    })
+
+    const result = await deleteCognitoCredential('my-service', 'my_client')
+
+    expect(result).toEqual(undefined)
+    expect(mockSign).toHaveBeenCalledTimes(1)
+    expect(mockDelete).toHaveBeenCalledTimes(1)
+
+    const [url, options] = mockDelete.mock.calls[0]
+    expect(url).toBe('https://example.com/delete-clients/my-service')
+    expect(options.json).toBe(true)
+  })
+
+  it('signs the JSON body that it sends', async () => {
+    mockDelete.mockResolvedValue({
+      res: { statusCode: 200 },
+      payload: []
+    })
+
+    await deleteCognitoCredential('my-service', 'my_client')
+
+    const [requestToSign] = mockSign.mock.calls[0]
+    expect(requestToSign.method).toBe('DELETE')
+    expect(requestToSign.headers['content-type']).toBe('application/json')
+    expect(requestToSign.body).toBe(
+      JSON.stringify({ client_names: ['my_client'] })
+    )
+    const options = mockDelete.mock.calls[0][1]
+    expect(options.payload).toBe(requestToSign.body)
+  })
+
+  it('encodes the service name in the path', async () => {
+    mockDelete.mockResolvedValue({
+      res: { statusCode: 200 },
+      payload: []
+    })
+
+    await deleteCognitoCredential('my service', 'my_client')
+
+    const url = mockDelete.mock.calls[0][0]
+    expect(url).toBe('https://example.com/delete-clients/my%20service')
+  })
+
+  it('throws an error when the backend returns a non-200 status', async () => {
+    mockDelete.mockResolvedValue({
+      res: { statusCode: 500 },
+      payload: []
+    })
+
+    await expect(
+      deleteCognitoCredential('my-service', 'my_client')
+    ).rejects.toThrow('Failed to delete Cognito credentials. Status code: 500')
+    expect(mockSign).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([{ message: 'boo!' }, [[1, 2]]])(
+    'throws an error if the backend returns %o',
+    async (payload) => {
+      mockDelete.mockResolvedValue({
+        res: { statusCode: 500 },
+        payload
+      })
+
+      await expect(
+        deleteCognitoCredential('my-service', 'my_client')
+      ).rejects.toThrow(
+        'Failed to delete Cognito credentials. Status code: 500'
+      )
+      expect(mockSign).toHaveBeenCalledTimes(1)
+    }
+  )
 })

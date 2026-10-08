@@ -10,6 +10,7 @@ import {
   RotationError,
   allCognitoCredentials
 } from '#/common/helpers/cognito-client.js'
+import { deleteCognitoCredential } from '../common/helpers/cognito-client'
 
 // A retry rotates again, and a client holds at most two secrets, so
 // retrying blind can remove the secret the caller still uses. Per the CDP
@@ -153,6 +154,32 @@ export const clients = [
         })
       } catch (err) {
         logger.error(err.message)
+        return Boom.internal()
+      }
+    }
+  },
+  {
+    method: 'DELETE',
+    path: '/clients/{tenantServiceName}',
+    handler: async (request, h) => {
+      try {
+        const {
+          db,
+          auth,
+          params: { tenantServiceName, clientId }
+        } = request
+        logger.info(`Client deletion requested by ${auth.credentials.username}`)
+
+        const client = await findClient(tenantServiceName, clientId, db)
+
+        if (!client) {
+          return Boom.notFound()
+        }
+
+        await deleteCognitoCredential()
+
+        // TODO delete client from sync
+      } catch (err) {
         return Boom.internal()
       }
     }
