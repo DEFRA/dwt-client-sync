@@ -7,7 +7,8 @@ import { sync } from '#/services/client-sync.js'
 import {
   createCognitoCredential,
   rotateCognitoCredential,
-  RotationError
+  RotationError,
+  allCognitoCredentials
 } from '#/common/helpers/cognito-client.js'
 
 // A retry rotates again, and a client holds at most two secrets, so
@@ -111,6 +112,22 @@ export const clients = [
           payload,
           params: { tenantServiceName }
         } = request
+        // Check if a client with that name already exists
+        // Comparision is case insensitive
+        // e.g. client-name == Client-Name == cLieNt-NAmE
+        const allCredentials = await allCognitoCredentials(tenantServiceName)
+        const requestedName = payload.clientName.toLowerCase()
+
+        if (allCredentials?.client_details) {
+          const isDuplicate = allCredentials.client_details.some(
+            (detail) => detail.client_name.toLowerCase() === requestedName
+          )
+          if (isDuplicate) {
+            return Boom.conflict(
+              `Client name '${requestedName}' already exists (case insensitive)`
+            )
+          }
+        }
 
         // Send creation request to cognito
         const credentials = await createCognitoCredential(

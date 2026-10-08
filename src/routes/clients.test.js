@@ -19,7 +19,7 @@ const { MockRotationError } = vi.hoisted(() => ({
 }))
 
 vi.mock('#/common/helpers/cognito-client.js', () => ({
-  allCognitoCredentials: vi.fn(),
+  allCognitoCredentials: vi.fn().mockResolvedValue({}),
   createCognitoCredential: vi.fn(),
   rotateCognitoCredential: vi.fn(),
   RotationError: MockRotationError
@@ -275,11 +275,14 @@ describe('POST Clients', () => {
   let server
   let createCognitoCredential
   let clientSyncService
+  let allCognitoCredentials
 
   beforeAll(async () => {
     createCognitoCredential = (
       await import('#/common/helpers/cognito-client.js')
     ).createCognitoCredential
+    allCognitoCredentials = (await import('#/common/helpers/cognito-client.js'))
+      .allCognitoCredentials
     clientSyncService = await import('#/services/client-sync.js')
     const { createServer } = await import('#/server.js')
 
@@ -349,7 +352,32 @@ describe('POST Clients', () => {
     expect(responseBody?.message).toBe(
       'clientName must be 128 characters or fewer'
     )
+  })
 
+  it('returns a 409 error when a client name already exists (case-insensitive)', async () => {
+    allCognitoCredentials.mockResolvedValue({
+      client_details: [
+        {
+          client_name: 'Existing-Client',
+          client_id: 'existing-id',
+          client_secret: 'existing-secret'
+        }
+      ]
+    })
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/clients/myTenantServiceName',
+      auth,
+      payload: {
+        clientName: 'existing-client'
+      }
+    })
+
+    expect(response.statusCode).toBe(409)
+    const responseBody = JSON.parse(response.payload)
+    expect(responseBody?.error).toBe('Conflict')
+    expect(responseBody?.message).toContain('already exists (case insensitive)')
     expect(clientSyncService.sync).not.toHaveBeenCalled()
   })
 
