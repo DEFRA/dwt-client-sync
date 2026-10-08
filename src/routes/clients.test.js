@@ -355,7 +355,7 @@ describe('POST Clients', () => {
   })
 
   it('returns a 409 error when a client name already exists (case-insensitive)', async () => {
-    allCognitoCredentials.mockResolvedValue({
+    allCognitoCredentials.mockResolvedValueOnce({
       client_details: [
         {
           client_name: 'Existing-Client',
@@ -378,6 +378,7 @@ describe('POST Clients', () => {
     const responseBody = JSON.parse(response.payload)
     expect(responseBody?.error).toBe('Conflict')
     expect(responseBody?.message).toContain('already exists (case insensitive)')
+    expect(createCognitoCredential).not.toHaveBeenCalled()
     expect(clientSyncService.sync).not.toHaveBeenCalled()
   })
 
