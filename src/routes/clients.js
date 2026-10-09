@@ -4,13 +4,14 @@ import { clientSchema } from '#/common/helpers/validation.js'
 import { findClient, findClients } from '#/services/clients.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { sync } from '#/services/client-sync.js'
+import { deleteClient } from '#/services/client-delete.js'
 import {
   createCognitoCredential,
   rotateCognitoCredential,
   RotationError,
+  deleteCognitoCredential,
   allCognitoCredentials
 } from '#/common/helpers/cognito-client.js'
-import { deleteCognitoCredential } from '../common/helpers/cognito-client'
 
 // A retry rotates again, and a client holds at most two secrets, so
 // retrying blind can remove the secret the caller still uses. Per the CDP
@@ -160,7 +161,7 @@ export const clients = [
   },
   {
     method: 'DELETE',
-    path: '/clients/{tenantServiceName}',
+    path: '/clients/{tenantServiceName}/{clientId}',
     handler: async (request, h) => {
       try {
         const {
@@ -176,9 +177,19 @@ export const clients = [
           return Boom.notFound()
         }
 
-        await deleteCognitoCredential()
+        await deleteCognitoCredential(tenantServiceName, client.clientName)
 
-        // TODO delete client from sync
+        try {
+          await deleteClient(db, clientId, tenantServiceName)
+        } catch (err) {
+          // If credential deletion succeeds but sync fails, log error, but still return 'success'
+          // Scheduled sync should fix the cache later
+          logger.error(
+            `Deleting client from cache failed with error: ${err.message}`
+          )
+        }
+
+        return h.response()
       } catch (err) {
         return Boom.internal()
       }
