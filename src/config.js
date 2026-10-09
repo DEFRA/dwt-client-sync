@@ -184,6 +184,12 @@ export const config = convict({
       default: '/tenants/services/{service-name}/user-pool/create-clients',
       env: 'COGNITO_CREATE_CLIENTS_PATH'
     },
+    deleteClientsPath: {
+      doc: 'Path for the Cognito delete client endpoint',
+      format: String,
+      default: '/tenants/services/{service_name}/user-pool/delete-clients',
+      env: 'COGNITO_DELETE_CLIENTS_PATH'
+    },
     rotateClientsPath: {
       doc: 'Path for the Cognito rotate client credentials endpoint',
       format: String,

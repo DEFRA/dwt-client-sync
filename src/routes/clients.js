@@ -4,10 +4,12 @@ import { clientSchema } from '#/common/helpers/validation.js'
 import { findClient, findClients } from '#/services/clients.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { sync } from '#/services/client-sync.js'
+import { deleteClient } from '#/services/client-delete.js'
 import {
   createCognitoCredential,
   rotateCognitoCredential,
   RotationError,
+  deleteCognitoCredential,
   allCognitoCredentials
 } from '#/common/helpers/cognito-client.js'
 
@@ -153,6 +155,42 @@ export const clients = [
         })
       } catch (err) {
         logger.error(err.message)
+        return Boom.internal()
+      }
+    }
+  },
+  {
+    method: 'DELETE',
+    path: '/clients/{tenantServiceName}/{clientId}',
+    handler: async (request, h) => {
+      try {
+        const {
+          db,
+          auth,
+          params: { tenantServiceName, clientId }
+        } = request
+        logger.info(`Client deletion requested by ${auth.credentials.username}`)
+
+        const client = await findClient(tenantServiceName, clientId, db)
+
+        if (!client) {
+          return Boom.notFound()
+        }
+
+        await deleteCognitoCredential(tenantServiceName, client.clientName)
+
+        try {
+          await deleteClient(db, clientId, tenantServiceName)
+        } catch (err) {
+          // If credential deletion succeeds but sync fails, log error, but still return 'success'
+          // Scheduled sync should fix the cache later
+          logger.error(
+            `Deleting client from cache failed with error: ${err.message}`
+          )
+        }
+
+        return h.response()
+      } catch (err) {
         return Boom.internal()
       }
     }

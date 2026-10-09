@@ -22,6 +22,8 @@ vi.mock('#/common/helpers/cognito-client.js', () => ({
   allCognitoCredentials: vi.fn().mockResolvedValue({}),
   createCognitoCredential: vi.fn(),
   rotateCognitoCredential: vi.fn(),
+  deleteCognitoCredential: vi.fn(),
+  deleteClient: vi.fn(),
   RotationError: MockRotationError
 }))
 
@@ -642,5 +644,116 @@ describe('POST Clients rotate', () => {
     const response = await server.inject({ method: 'POST', url })
 
     expect(response.statusCode).toBe(401)
+  })
+})
+
+describe('DELETE Clients', () => {
+  let clientService
+  let deleteCognitoCredential
+  let server
+  let deleteClientService
+
+  beforeAll(async () => {
+    clientService = await import('#/services/clients.js')
+    deleteCognitoCredential = (
+      await import('#/common/helpers/cognito-client.js')
+    ).deleteCognitoCredential
+    deleteClientService = await import('#/services/client-delete.js')
+
+    const { createServer } = await import('#/server.js')
+    server = await createServer()
+    await server.initialize()
+  })
+
+  const clientRecord = {
+    clientName: 'Test Client',
+    clientId: '1a2b3c4d5e6f7g8h9i0j1k2l3m',
+    tenantServiceName: 'waste-movement-external-api'
+  }
+  const auth = { strategy: 'basic', credentials: { username: 'test' } }
+
+  it('successfully deletes and syncs an existant client', async () => {
+    vi.spyOn(clientService, 'findClient').mockResolvedValue(clientRecord)
+    deleteCognitoCredential.mockResolvedValueOnce(true)
+    vi.spyOn(deleteClientService, 'deleteClient').mockResolvedValueOnce({
+      deletedCount: 1
+    })
+
+    const response = await server.inject({
+      method: 'DELETE',
+      url: `/clients/${clientRecord.tenantServiceName}/${clientRecord.clientId}`,
+      auth
+    })
+
+    // 204 - Return with no content
+    expect(response.statusCode).toBe(204)
+    expect(deleteCognitoCredential).toHaveBeenCalledWith(
+      clientRecord.tenantServiceName,
+      clientRecord.clientName
+    )
+    expect(deleteClientService.deleteClient.mock.calls[0][1]).toStrictEqual(
+      clientRecord.clientId
+    )
+    expect(deleteClientService.deleteClient.mock.calls[0][2]).toStrictEqual(
+      clientRecord.tenantServiceName
+    )
+  })
+
+  it("raises an error if the client doesn't exist", async () => {
+    vi.spyOn(clientService, 'findClient').mockResolvedValue(undefined)
+
+    const response = await server.inject({
+      method: 'DELETE',
+      url: `/clients/${clientRecord.tenantServiceName}/${clientRecord.clientId}`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(404)
+  })
+
+  it('raises an error if searching for the client id fails', async () => {
+    vi.spyOn(clientService, 'findClient').mockRejectedValue(
+      new Error('Database error')
+    )
+
+    const response = await server.inject({
+      method: 'DELETE',
+      url: `/clients/${clientRecord.tenantServiceName}/${clientRecord.clientId}`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(500)
+  })
+
+  it('raises an error if deleteCognitoCredentials fails', async () => {
+    vi.spyOn(clientService, 'findClient').mockResolvedValue(clientRecord)
+    deleteCognitoCredential.mockRejectedValue(new Error('Cognito error'))
+
+    const response = await server.inject({
+      method: 'DELETE',
+      url: `/clients/${clientRecord.tenantServiceName}/${clientRecord.clientId}`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(500)
+  })
+
+  it('succeeds but logs an error if deleting in cognito succeeds but cache deletion fails', async () => {
+    vi.spyOn(clientService, 'findClient').mockResolvedValue(clientRecord)
+    deleteCognitoCredential.mockResolvedValue(true)
+    vi.spyOn(deleteClientService, 'deleteClient').mockRejectedValue(
+      new Error('Cache delete failed')
+    )
+
+    const response = await server.inject({
+      method: 'DELETE',
+      url: `/clients/${clientRecord.tenantServiceName}/${clientRecord.clientId}`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(204)
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'Deleting client from cache failed with error: Cache delete failed'
+    )
   })
 })
