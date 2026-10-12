@@ -14,6 +14,7 @@ const {
   listClientsPath,
   createClientsPath,
   rotateClientsPath,
+  deleteClientsPath,
   rotateTimeoutMs,
   protocol
 } = config.get('cognito')
@@ -190,9 +191,62 @@ async function rotateCognitoCredential(serviceName, clientName) {
   return response.payload
 }
 
+async function deleteCognitoCredential(serviceName, clientName) {
+  logger.info('Deleting Cognito credentials')
+
+  const path = deleteClientsPath.replace(
+    '{service_name}',
+    encodeURIComponent(serviceName)
+  )
+
+  const requestToSign = new HttpRequest({
+    method: 'POST',
+    protocol,
+    hostname: baseUrl,
+    path,
+    headers: {
+      host: baseUrl,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      client_names: [clientName]
+    })
+  })
+
+  const signed = await signer.sign(requestToSign)
+
+  const uri = `${protocol}://${baseUrl}${path}`
+
+  logger.info(uri)
+
+  const { res, payload } = await Wreck.post(uri, {
+    headers: signed.headers,
+    json: true,
+    payload: signed.body
+  })
+
+  // return from a deletion must be an empty array
+  const clientDetailsIsEmptyArray =
+    Array.isArray(payload['client_details']) &&
+    payload['client_details'].length === 0
+
+  if (
+    res.statusCode < 200 ||
+    res.statusCode >= 300 ||
+    !clientDetailsIsEmptyArray
+  ) {
+    const message = `Failed to delete Cognito credentials. Status code: ${res.statusCode}`
+    logger.error(message)
+    throw new Error(message)
+  }
+
+  logger.info('Successfully deleted Cognito credentials')
+}
+
 export {
   allCognitoCredentials,
   createCognitoCredential,
   rotateCognitoCredential,
+  deleteCognitoCredential,
   RotationError
 }

@@ -32,6 +32,7 @@ vi.mock('#/config.js', () => ({
       signerService: 'execute-api',
       listClientsPath: '/clients/{service-name}',
       createClientsPath: '/create-clients/{service-name}',
+      deleteClientsPath: '/delete-clients/{service_name}',
       rotateClientsPath: '/rotate-clients/{service-name}',
       rotateTimeoutMs: 5000,
       protocol: 'https'
@@ -50,6 +51,7 @@ const {
   allCognitoCredentials,
   createCognitoCredential,
   rotateCognitoCredential,
+  deleteCognitoCredential,
   RotationError
 } = await import('./cognito-client.js')
 
@@ -281,5 +283,109 @@ describe('rotateCognitoCredential', () => {
 
     expect(error).toBeInstanceOf(RotationError)
     expect(error.outcomeUnknown).toBe(false)
+  })
+})
+
+describe('deleteCognitoCredential', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    mockSign.mockImplementation(async (request) => ({
+      headers: { ...request.headers, Authorization: 'mocked-signature' },
+      body: request.body
+    }))
+  })
+
+  it('returns deleted credentials successfully', async () => {
+    mockPost.mockResolvedValue({
+      res: { statusCode: 200 },
+      payload: {
+        cognito_user_pool_id: 'eu-west-2_EXAMPLE01',
+        request_id: 'my-request-id',
+        tenant_service_name: encodeURIComponent('my-service'),
+        client_details: []
+      }
+    })
+
+    const result = await deleteCognitoCredential('my-service', 'my_client')
+
+    expect(result).toEqual(undefined)
+    expect(mockSign).toHaveBeenCalledTimes(1)
+    expect(mockPost).toHaveBeenCalledTimes(1)
+
+    const [url, options] = mockPost.mock.calls[0]
+    expect(url).toBe('https://example.com/delete-clients/my-service')
+    expect(options.json).toBe(true)
+  })
+
+  it('signs the JSON body that it sends', async () => {
+    mockPost.mockResolvedValue({
+      res: { statusCode: 200 },
+      payload: {
+        cognito_user_pool_id: 'eu-west-2_EXAMPLE01',
+        request_id: 'my-request-id',
+        tenant_service_name: encodeURIComponent('my-service'),
+        client_details: []
+      }
+    })
+
+    await deleteCognitoCredential('my-service', 'my_client')
+
+    const [requestToSign] = mockSign.mock.calls[0]
+    expect(requestToSign.method).toBe('POST')
+    expect(requestToSign.headers['content-type']).toBe('application/json')
+    expect(requestToSign.body).toBe(
+      JSON.stringify({ client_names: ['my_client'] })
+    )
+    const options = mockPost.mock.calls[0][1]
+    expect(options.payload).toBe(requestToSign.body)
+  })
+
+  it('encodes the service name in the path', async () => {
+    mockPost.mockResolvedValue({
+      res: { statusCode: 200 },
+      payload: {
+        cognito_user_pool_id: 'eu-west-2_EXAMPLE01',
+        request_id: 'my-request-id',
+        tenant_service_name: encodeURIComponent('my service'),
+        client_details: []
+      }
+    })
+
+    await deleteCognitoCredential('my service', 'my_client')
+
+    const url = mockPost.mock.calls[0][0]
+    expect(url).toBe('https://example.com/delete-clients/my%20service')
+  })
+
+  it('throws an error when the backend returns a non-200 status', async () => {
+    mockPost.mockResolvedValue({
+      res: { statusCode: 500 },
+      payload: {}
+    })
+
+    await expect(
+      deleteCognitoCredential('my-service', 'my_client')
+    ).rejects.toThrow('Failed to delete Cognito credentials. Status code: 500')
+    expect(mockSign).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    {
+      message: 'boo!'
+    },
+    {
+      clientDetails: ['Not empty']
+    }
+  ])('throws an error if the backend returns %o', async (payload) => {
+    mockPost.mockResolvedValue({
+      res: { statusCode: 500 },
+      payload
+    })
+
+    await expect(
+      deleteCognitoCredential('my-service', 'my_client')
+    ).rejects.toThrow('Failed to delete Cognito credentials. Status code: 500')
+    expect(mockSign).toHaveBeenCalledTimes(1)
   })
 })
