@@ -7,8 +7,8 @@
 # TODO: point at #main once DEFRA/digital-waste-tracking-uat#193 is merged
 
 include:
-  # The override goes in this list rather than under services: below, as
-  # Compose before v5 rejects redefining an included service
+  # The override goes in this list, as older Compose versions (such as v2.38 on
+  # GitHub's runners) reject redefining an included service
   - path:
       - ${SHARED_COMPOSE:-https://github.com/DEFRA/digital-waste-tracking-uat.git#shared-compose-and-integration-workflow:shared-compose/compose.yml}
       - compose.integration.override.yml
