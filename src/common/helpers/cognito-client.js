@@ -226,9 +226,15 @@ async function deleteCognitoCredential(serviceName, clientName) {
   })
 
   // return from a deletion must be an empty array
-  const payloadIsEmptyArray = Array.isArray(payload) && payload.length === 0
+  const clientDetailsIsEmptyArray =
+    Array.isArray(payload['client_details']) &&
+    payload['client_details'].length === 0
 
-  if (res.statusCode < 200 || res.statusCode >= 300 || !payloadIsEmptyArray) {
+  if (
+    res.statusCode < 200 ||
+    res.statusCode >= 300 ||
+    !clientDetailsIsEmptyArray
+  ) {
     const message = `Failed to delete Cognito credentials. Status code: ${res.statusCode}`
     logger.error(message)
     throw new Error(message)

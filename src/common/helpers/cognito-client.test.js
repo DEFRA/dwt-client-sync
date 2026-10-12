@@ -301,7 +301,12 @@ describe('deleteCognitoCredential', () => {
   it('returns deleted credentials successfully', async () => {
     mockDelete.mockResolvedValue({
       res: { statusCode: 200 },
-      payload: []
+      payload: {
+        cognito_user_pool_id: 'eu-west-2_EXAMPLE01',
+        request_id: 'my-request-id',
+        tenant_service_name: encodeURIComponent('my-service'),
+        client_details: []
+      }
     })
 
     const result = await deleteCognitoCredential('my-service', 'my_client')
@@ -318,7 +323,12 @@ describe('deleteCognitoCredential', () => {
   it('signs the JSON body that it sends', async () => {
     mockDelete.mockResolvedValue({
       res: { statusCode: 200 },
-      payload: []
+      payload: {
+        cognito_user_pool_id: 'eu-west-2_EXAMPLE01',
+        request_id: 'my-request-id',
+        tenant_service_name: encodeURIComponent('my-service'),
+        client_details: []
+      }
     })
 
     await deleteCognitoCredential('my-service', 'my_client')
@@ -336,7 +346,12 @@ describe('deleteCognitoCredential', () => {
   it('encodes the service name in the path', async () => {
     mockDelete.mockResolvedValue({
       res: { statusCode: 200 },
-      payload: []
+      payload: {
+        cognito_user_pool_id: 'eu-west-2_EXAMPLE01',
+        request_id: 'my-request-id',
+        tenant_service_name: encodeURIComponent('my service'),
+        client_details: []
+      }
     })
 
     await deleteCognitoCredential('my service', 'my_client')
@@ -348,7 +363,7 @@ describe('deleteCognitoCredential', () => {
   it('throws an error when the backend returns a non-200 status', async () => {
     mockDelete.mockResolvedValue({
       res: { statusCode: 500 },
-      payload: []
+      payload: {}
     })
 
     await expect(
@@ -357,20 +372,22 @@ describe('deleteCognitoCredential', () => {
     expect(mockSign).toHaveBeenCalledTimes(1)
   })
 
-  it.each([{ message: 'boo!' }, [[1, 2]]])(
-    'throws an error if the backend returns %o',
-    async (payload) => {
-      mockDelete.mockResolvedValue({
-        res: { statusCode: 500 },
-        payload
-      })
-
-      await expect(
-        deleteCognitoCredential('my-service', 'my_client')
-      ).rejects.toThrow(
-        'Failed to delete Cognito credentials. Status code: 500'
-      )
-      expect(mockSign).toHaveBeenCalledTimes(1)
+  it.each([
+    {
+      message: 'boo!'
+    },
+    {
+      clientDetails: ['Not empty']
     }
-  )
+  ])('throws an error if the backend returns %o', async (payload) => {
+    mockDelete.mockResolvedValue({
+      res: { statusCode: 500 },
+      payload
+    })
+
+    await expect(
+      deleteCognitoCredential('my-service', 'my_client')
+    ).rejects.toThrow('Failed to delete Cognito credentials. Status code: 500')
+    expect(mockSign).toHaveBeenCalledTimes(1)
+  })
 })
