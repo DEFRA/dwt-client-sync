@@ -1,0 +1,11 @@
+# dwt-client-sync's changes to the shared stack (see compose.integration.yml)
+
+services:
+  dwt-client-sync:
+    # A local name, so the build doesn't replace your pulled published image
+    image: dwt-client-sync:local
+    build:
+      # Paths here resolve against the shared file's folder, so build from
+      # where compose is run: this repo's root
+      context: ${PWD}
+      target: production

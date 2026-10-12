@@ -1,18 +1,14 @@
 # The full stack for the integration tests, shared with the other service repos
 # (see shared-compose/README.md in digital-waste-tracking-uat), with
-# dwt-client-sync built from this repo.
+# dwt-client-sync built from this repo by compose.integration.override.yml.
 #
 # Set SHARED_COMPOSE to a local checkout's shared-compose/compose.yml to try
 # changes to the shared stack.
 # TODO: point at #main once DEFRA/digital-waste-tracking-uat#193 is merged
 
 include:
-  - ${SHARED_COMPOSE:-https://github.com/DEFRA/digital-waste-tracking-uat.git#shared-compose-and-integration-workflow:shared-compose/compose.yml}
-
-services:
-  dwt-client-sync:
-    # A local name, so the build doesn't replace your pulled published image
-    image: dwt-client-sync:local
-    build:
-      context: .
-      target: production
+  # The override goes in this list rather than under services: below, as
+  # Compose before v5 rejects redefining an included service
+  - path:
+      - ${SHARED_COMPOSE:-https://github.com/DEFRA/digital-waste-tracking-uat.git#shared-compose-and-integration-workflow:shared-compose/compose.yml}
+      - compose.integration.override.yml
