@@ -200,7 +200,7 @@ async function deleteCognitoCredential(serviceName, clientName) {
   )
 
   const requestToSign = new HttpRequest({
-    method: 'DELETE',
+    method: 'POST',
     protocol,
     hostname: baseUrl,
     path,
@@ -219,7 +219,7 @@ async function deleteCognitoCredential(serviceName, clientName) {
 
   logger.info(uri)
 
-  const { res, payload } = await Wreck.delete(uri, {
+  const { res, payload } = await Wreck.post(uri, {
     headers: signed.headers,
     json: true,
     payload: signed.body
