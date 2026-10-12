@@ -191,6 +191,7 @@ export const clients = [
 
         return h.response()
       } catch (err) {
+        logger.error(`Deleting client failed with error: ${err.message}`)
         return Boom.internal()
       }
     }

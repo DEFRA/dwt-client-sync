@@ -723,6 +723,9 @@ describe('DELETE Clients', () => {
     })
 
     expect(response.statusCode).toBe(500)
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'Deleting client failed with error: Database error'
+    )
   })
 
   it('raises an error if deleteCognitoCredentials fails', async () => {
@@ -736,6 +739,9 @@ describe('DELETE Clients', () => {
     })
 
     expect(response.statusCode).toBe(500)
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'Deleting client failed with error: Cognito error'
+    )
   })
 
   it('succeeds but logs an error if deleting in cognito succeeds but cache deletion fails', async () => {
