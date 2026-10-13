@@ -4,11 +4,10 @@
 #
 # Set SHARED_COMPOSE to a local checkout's shared-compose/compose.yml to try
 # changes to the shared stack.
-# TODO: point at #main once DEFRA/digital-waste-tracking-uat#193 is merged
 
 include:
   # The override goes in this list, as older Compose versions (such as v2.38 on
   # GitHub's runners) reject redefining an included service
   - path:
-      - ${SHARED_COMPOSE:-https://github.com/DEFRA/digital-waste-tracking-uat.git#shared-compose-and-integration-workflow:shared-compose/compose.yml}
+      - ${SHARED_COMPOSE:-https://github.com/DEFRA/digital-waste-tracking-uat.git#main:shared-compose/compose.yml}
       - compose.integration.override.yml

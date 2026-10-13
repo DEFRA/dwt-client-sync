@@ -49,12 +49,10 @@ jobs:
 
   # Runs the UAT pack's client-sync tests against the shared stack, with
   # dwt-client-sync built from this PR (see compose.integration.yml)
-  # TODO: point at @main and drop uat-ref once DEFRA/digital-waste-tracking-uat#193 is merged
   integration-tests:
     name: Run Integration Tests
     needs: pr-validator
-    uses: DEFRA/digital-waste-tracking-uat/.github/workflows/integration-tests.yml@shared-compose-and-integration-workflow
+    uses: DEFRA/digital-waste-tracking-uat/.github/workflows/integration-tests.yml@main
     with:
       compose-file: compose.integration.yml
       test-script: test:uat:client-sync
-      uat-ref: shared-compose-and-integration-workflow
