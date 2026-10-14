@@ -410,9 +410,9 @@ describe('POST Clients', () => {
 
     const responseBody = JSON.parse(response.payload)
     expect(responseBody).toStrictEqual({
-      client_name: 'goodName1-_.',
-      client_id: 'my_client_id',
-      client_secret: 'my_client_secret'
+      clientName: 'goodName1-_.',
+      clientId: 'my_client_id',
+      clientSecret: 'my_client_secret'
     })
     expect(clientSyncService.sync).toHaveBeenCalled()
   })
@@ -434,9 +434,9 @@ describe('POST Clients', () => {
     expect(response.statusCode).toBe(200)
     const responseBody = JSON.parse(response.payload)
     expect(responseBody).toStrictEqual({
-      client_name: 'goodName1-_.',
-      client_id: 'my_client_id',
-      client_secret: 'my_client_secret'
+      clientName: 'goodName1-_.',
+      clientId: 'my_client_id',
+      clientSecret: 'my_client_secret'
     })
     expect(mockLogger.error).toHaveBeenCalledWith(
       'Sync failed with error: Sync failed'
@@ -453,6 +453,12 @@ describe('POST Clients rotate', () => {
     client_name: 'Test Client',
     client_id: clientId,
     client_secret: 'my_new_client_secret'
+  }
+  // What the endpoint returns for rotatedClient
+  const rotatedCredentials = {
+    clientName: 'Test Client',
+    clientId,
+    clientSecret: 'my_new_client_secret'
   }
   let server
   let rotateCognitoCredential
@@ -492,11 +498,21 @@ describe('POST Clients rotate', () => {
     const response = await server.inject({ method: 'POST', url, auth })
 
     expect(response.statusCode).toBe(200)
-    expect(JSON.parse(response.payload)).toStrictEqual(rotatedClient)
+    expect(JSON.parse(response.payload)).toStrictEqual(rotatedCredentials)
     expect(rotateCognitoCredential).toHaveBeenCalledWith(
       tenantServiceName,
       'Test Client'
     )
+  })
+
+  it('returns only the client fields, not anything else CDP sends', async () => {
+    rotateCognitoCredential.mockResolvedValue({
+      client_details: [{ ...rotatedClient, created_at: '2026-10-14T12:00:00Z' }]
+    })
+
+    const response = await server.inject({ method: 'POST', url, auth })
+
+    expect(JSON.parse(response.payload)).toStrictEqual(rotatedCredentials)
   })
 
   it('returns a 404 error without rotating when the client is not stored', async () => {
@@ -531,7 +547,7 @@ describe('POST Clients rotate', () => {
     const response = await server.inject({ method: 'POST', url, auth })
 
     expect(response.statusCode).toBe(200)
-    expect(JSON.parse(response.payload)).toStrictEqual(rotatedClient)
+    expect(JSON.parse(response.payload)).toStrictEqual(rotatedCredentials)
     expect(mockLogger.warn).toHaveBeenCalledWith(
       `Rotating client ${clientId} also rotated 1 other client(s) with the same name`
     )
