@@ -80,7 +80,7 @@ describe('Client Routes', () => {
 
       expect(result.output.payload).toEqual({
         error: 'Not Found',
-        message: 'Not Found',
+        message: `Client '${clientRecord.clientId}' not found for tenant service '${clientRecord.tenantServiceName}'`,
         statusCode: 404
       })
     })
@@ -630,6 +630,9 @@ describe('POST Clients rotate', () => {
     const response = await server.inject({ method: 'POST', url, auth })
 
     expect(response.statusCode).toBe(404)
+    expect(JSON.parse(response.payload).message).toBe(
+      `Client '${clientId}' not found for tenant service '${tenantServiceName}'`
+    )
     expect(rotateCognitoCredential).not.toHaveBeenCalled()
   })
 
@@ -824,6 +827,9 @@ describe('DELETE Clients', () => {
     })
 
     expect(response.statusCode).toBe(404)
+    expect(JSON.parse(response.payload).message).toBe(
+      `Client '${clientRecord.clientId}' not found for tenant service '${clientRecord.tenantServiceName}'`
+    )
   })
 
   it('raises an error if searching for the client id fails', async () => {

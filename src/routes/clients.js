@@ -43,6 +43,17 @@ const rotateParamsSchema = Joi.object({
 
 const logger = createLogger()
 
+/**
+ * @param {string} tenantServiceName
+ * @param {string} clientId
+ * @returns {Boom.Boom} A 404 naming the client and service
+ */
+function clientNotFound(tenantServiceName, clientId) {
+  return Boom.notFound(
+    `Client '${clientId}' not found for tenant service '${tenantServiceName}'`
+  )
+}
+
 // CDP doesn't validate service names, so an unknown one fails there with an
 // unhelpful 400 or 500. Only the services this service syncs are managed here
 const checkTenantService = {
@@ -95,7 +106,7 @@ export const clients = [
         const client = await findClient(tenantServiceName, clientId, db)
 
         if (!client) {
-          return Boom.notFound()
+          return clientNotFound(tenantServiceName, clientId)
         }
 
         return h.response(toClientResponse(client))
@@ -253,7 +264,7 @@ export const clients = [
         const client = await findClient(tenantServiceName, clientId, db)
 
         if (!client) {
-          return Boom.notFound()
+          return clientNotFound(tenantServiceName, clientId)
         }
 
         await deleteCognitoCredential(tenantServiceName, client.clientName)
@@ -304,7 +315,7 @@ export const clients = [
         const client = await findClient(tenantServiceName, clientId, db)
 
         if (!client) {
-          return Boom.notFound()
+          return clientNotFound(tenantServiceName, clientId)
         }
 
         const rotatedClients = await rotateCognitoCredential(
