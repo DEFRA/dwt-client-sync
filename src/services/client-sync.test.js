@@ -56,12 +56,10 @@ describe('Software Provider sync', () => {
   })
 
   it('returns all synced clients', async () => {
-    mockAllCognitoCredentials.mockResolvedValue({
-      client_details: [
-        { client_name: 'Client One', client_id: 'client-1' },
-        { client_name: 'Client Two', client_id: 'client-2' }
-      ]
-    })
+    mockAllCognitoCredentials.mockResolvedValue([
+      { clientName: 'Client One', clientId: 'client-1' },
+      { clientName: 'Client Two', clientId: 'client-2' }
+    ])
 
     const result = await sync()
 
@@ -84,6 +82,25 @@ describe('Software Provider sync', () => {
     expect(mockAllCognitoCredentials).toHaveBeenNthCalledWith(1, 'service-one')
 
     expect(mockAllCognitoCredentials).toHaveBeenNthCalledWith(2, 'service-two')
+
+    expect(mockStore).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      undefined,
+      [
+        {
+          clientId: 'client-1',
+          clientName: 'Client One',
+          tenantServiceName: 'service-one'
+        },
+        {
+          clientId: 'client-2',
+          clientName: 'Client Two',
+          tenantServiceName: 'service-one'
+        }
+      ],
+      'service-one'
+    )
   })
 
   it('returns empty result when no services are configured', async () => {
@@ -110,9 +127,7 @@ describe('Software Provider sync', () => {
   })
 
   it('handles missing credentials', async () => {
-    mockAllCognitoCredentials.mockResolvedValue({
-      body: {}
-    })
+    mockAllCognitoCredentials.mockResolvedValue(undefined)
 
     const result = await sync()
 
@@ -129,6 +144,29 @@ describe('Software Provider sync', () => {
         }
       ]
     })
+
+    // Missing details must never be taken as "no clients", which deletes them all
+    expect(mockStore).not.toHaveBeenCalled()
+  })
+
+  it('removes every stored client when Cognito returns no clients', async () => {
+    mockAllCognitoCredentials.mockResolvedValue([])
+    const db = {}
+
+    await sync(db)
+
+    expect(mockStore).toHaveBeenCalledWith(
+      expect.anything(),
+      db,
+      [],
+      'service-one'
+    )
+    expect(mockStore).toHaveBeenCalledWith(
+      expect.anything(),
+      db,
+      [],
+      'service-two'
+    )
   })
 
   it('handles errors fetching credentials', async () => {
@@ -144,11 +182,7 @@ describe('Software Provider sync', () => {
       serviceSyncList: ' service-one, , service-two '
     })
 
-    mockAllCognitoCredentials.mockResolvedValue({
-      body: {
-        client_details: []
-      }
-    })
+    mockAllCognitoCredentials.mockResolvedValue([])
 
     const result = await sync()
 

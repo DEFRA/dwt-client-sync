@@ -32,6 +32,41 @@ class RotationError extends Error {
   }
 }
 
+/**
+ * A Cognito client, mapped from CDP's credentials API so nothing else here
+ * depends on CDP's shape.
+ * @typedef {object} CognitoClient
+ * @property {string} clientId
+ * @property {string} clientName
+ * @property {string} [clientSecret] - Only sent when a client is created or rotated
+ */
+
+/**
+ * Maps the clients in a CDP credentials response (snake_case) to Cognito
+ * clients, dropping anything else CDP sends.
+ * @param {{ client_details?: object[] }} payload
+ * @returns {CognitoClient[] | undefined} undefined when the response has no client details
+ */
+function toCognitoClients(payload) {
+  const clientDetails = payload?.client_details
+
+  if (!Array.isArray(clientDetails)) {
+    return undefined
+  }
+
+  return clientDetails.map(
+    ({
+      client_id: clientId,
+      client_name: clientName,
+      client_secret: clientSecret
+    }) => ({
+      clientId,
+      clientName,
+      ...(clientSecret !== undefined && { clientSecret })
+    })
+  )
+}
+
 const signer = new SignatureV4({
   credentials: defaultProvider(),
   region,
@@ -39,6 +74,10 @@ const signer = new SignatureV4({
   sha256: Sha256
 })
 
+/**
+ * @param {string} serviceName
+ * @returns {Promise<CognitoClient[] | undefined>}
+ */
 async function allCognitoCredentials(serviceName) {
   logger.info('Fetching all Cognito credentials')
 
@@ -76,9 +115,14 @@ async function allCognitoCredentials(serviceName) {
     'Successfully fetched all Cognito credentials from the backend service.'
   )
 
-  return payload
+  return toCognitoClients(payload)
 }
 
+/**
+ * @param {string} serviceName
+ * @param {string} newClientName
+ * @returns {Promise<CognitoClient[] | undefined>} The created client, with its secret
+ */
 async function createCognitoCredential(serviceName, newClientName) {
   logger.info('Creating new Cognito credentials')
 
@@ -125,9 +169,14 @@ async function createCognitoCredential(serviceName, newClientName) {
     'Successfully created Cognito credentials from the backend service.'
   )
 
-  return payload
+  return toCognitoClients(payload)
 }
 
+/**
+ * @param {string} serviceName
+ * @param {string} clientName
+ * @returns {Promise<CognitoClient[] | undefined>} Every client rotated, with its new secret
+ */
 async function rotateCognitoCredential(serviceName, clientName) {
   logger.info('Rotating Cognito credentials')
 
@@ -188,7 +237,7 @@ async function rotateCognitoCredential(serviceName, clientName) {
 
   logger.info('Successfully rotated Cognito credentials')
 
-  return response.payload
+  return toCognitoClients(response.payload)
 }
 
 async function deleteCognitoCredential(serviceName, clientName) {
@@ -225,15 +274,13 @@ async function deleteCognitoCredential(serviceName, clientName) {
     payload: signed.body
   })
 
-  // return from a deletion must be an empty array
-  const clientDetailsIsEmptyArray =
-    Array.isArray(payload['client_details']) &&
-    payload['client_details'].length === 0
+  // A deletion returns no clients
+  const remainingClients = toCognitoClients(payload)
 
   if (
     res.statusCode < 200 ||
     res.statusCode >= 300 ||
-    !clientDetailsIsEmptyArray
+    remainingClients?.length !== 0
   ) {
     const message = `Failed to delete Cognito credentials. Status code: ${res.statusCode}`
     logger.error(message)
