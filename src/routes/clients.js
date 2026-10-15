@@ -44,6 +44,16 @@ const rotateParamsSchema = Joi.object({
 const logger = createLogger()
 
 /**
+ * @param {string} clientName
+ * @returns {Boom.Boom} A 409 naming the client
+ */
+function clientNameTaken(clientName) {
+  return Boom.conflict(
+    `Client name '${clientName}' already exists (case insensitive)`
+  )
+}
+
+/**
  * @param {string} tenantServiceName
  * @param {string} clientId
  * @returns {Boom.Boom} A 404 naming the client and service
@@ -178,12 +188,10 @@ export const clients = [
 
         const requestedName = payload.clientName.toLowerCase()
         const isDuplicate = existingClients.some(
-          (client) => client.clientName.toLowerCase() === requestedName
+          (client) => client.clientName?.toLowerCase() === requestedName
         )
         if (isDuplicate) {
-          return Boom.conflict(
-            `Client name '${requestedName}' already exists (case insensitive)`
-          )
+          return clientNameTaken(payload.clientName)
         }
 
         // Send creation request to cognito
@@ -197,7 +205,9 @@ export const clients = [
           if (err instanceof CdpError) {
             return err.outcomeUnknown
               ? Boom.badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE)
-              : Boom.badGateway('CDP refused the create request')
+              : Boom.badGateway(
+                  'CDP refused the create request, so no client was created'
+                )
           }
           throw err
         }
@@ -221,9 +231,7 @@ export const clients = [
 
         // CDP skips names that already exist, so nothing was created
         if (createdClients.length === 0) {
-          return Boom.conflict(
-            `Client name '${payload.clientName}' already exists`
-          )
+          return clientNameTaken(payload.clientName)
         }
 
         const createdClient = createdClients.find(

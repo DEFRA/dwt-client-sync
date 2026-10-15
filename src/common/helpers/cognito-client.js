@@ -16,6 +16,7 @@ const {
   rotateClientsPath,
   deleteClientsPath,
   rotateTimeoutMs,
+  createTimeoutMs,
   protocol
 } = config.get('cognito')
 
@@ -45,12 +46,16 @@ class CdpError extends Error {
  * Maps the clients in a CDP credentials response (snake_case) to Cognito
  * clients, dropping anything else CDP sends.
  * @param {{ client_details?: object[] }} payload
- * @returns {CognitoClient[] | undefined} undefined when the response has no client details
+ * @returns {CognitoClient[] | undefined} undefined when the response has no
+ * client details, or any of them isn't an object, as it can't be read
  */
 function toCognitoClients(payload) {
   const clientDetails = payload?.client_details
 
-  if (!Array.isArray(clientDetails)) {
+  if (
+    !Array.isArray(clientDetails) ||
+    !clientDetails.every((details) => details && typeof details === 'object')
+  ) {
     return undefined
   }
 
@@ -189,7 +194,9 @@ async function createCognitoCredential(serviceName, newClientName) {
 
   logger.info(uri)
 
-  const payload = await postToCdp('create', uri, signed)
+  const payload = await postToCdp('create', uri, signed, {
+    timeout: createTimeoutMs
+  })
 
   logger.info(
     'Successfully created Cognito credentials from the backend service.'

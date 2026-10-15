@@ -429,6 +429,15 @@ describe('POST Clients', () => {
     }
   )
 
+  it('ignores a listed client with no name when checking for duplicates', async () => {
+    allCognitoCredentials.mockResolvedValueOnce([{ clientId: 'nameless-id' }])
+
+    const response = await createClient()
+
+    expect(response.statusCode).toBe(200)
+    expect(createCognitoCredential).toHaveBeenCalled()
+  })
+
   it('returns a 502 error saying nothing was created when CDP refuses', async () => {
     createCognitoCredential.mockRejectedValueOnce(
       new MockCdpError('Refused', { outcomeUnknown: false })
@@ -438,7 +447,7 @@ describe('POST Clients', () => {
 
     expect(response.statusCode).toBe(502)
     expect(JSON.parse(response.payload).message).toBe(
-      'CDP refused the create request'
+      'CDP refused the create request, so no client was created'
     )
   })
 
@@ -488,7 +497,7 @@ describe('POST Clients', () => {
 
     expect(response.statusCode).toBe(409)
     expect(JSON.parse(response.payload).message).toBe(
-      "Client name 'goodName1-_.' already exists"
+      "Client name 'goodName1-_.' already exists (case insensitive)"
     )
   })
 

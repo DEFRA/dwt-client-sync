@@ -35,6 +35,7 @@ vi.mock('#/config.js', () => ({
       deleteClientsPath: '/delete-clients/{service_name}',
       rotateClientsPath: '/rotate-clients/{service-name}',
       rotateTimeoutMs: 5000,
+      createTimeoutMs: 6000,
       protocol: 'https'
     }))
   }
@@ -94,6 +95,10 @@ describe('allCognitoCredentials', () => {
   it.each([
     ['no client details', { request_id: 'my_request_id' }],
     ['client details that are not a list', { client_details: {} }],
+    [
+      'a client that is not an object',
+      { client_details: [null, { client_name: 'a', client_id: 'b' }] }
+    ],
     ['no payload', null]
   ])('returns undefined when the response has %s', async (_, payload) => {
     mockGet.mockResolvedValue({
@@ -170,6 +175,18 @@ describe('createCognitoCredential', () => {
       createCognitoCredential('my-service', 'new-client')
     ).rejects.toThrow('Failed to create Cognito credentials. Status code: 500')
     expect(mockSign).toHaveBeenCalledTimes(1)
+  })
+
+  it('sets a timeout', async () => {
+    mockPost.mockResolvedValue({
+      res: { statusCode: 200 },
+      payload: { client_details: [] }
+    })
+
+    await createCognitoCredential('my-service', 'new-client')
+
+    const options = mockPost.mock.calls[0][1]
+    expect(options.timeout).toBe(6000)
   })
 
   it.each([
