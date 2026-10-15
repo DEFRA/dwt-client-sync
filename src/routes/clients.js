@@ -15,9 +15,9 @@ import {
 
 // A retry rotates again, and a client holds at most two secrets, so
 // retrying blind can remove the secret the caller still uses. Per the CDP
-// portal API docs ("Rotate client credentials"): "A new secret is issued and
-// the existing secret is retained... If it already has two, the oldest is
-// removed to make room." TODO: link the page once I have portal access
+// docs ("Rotate client credentials"): "A new secret is issued and the existing
+// secret is retained... If it already has two, the oldest is removed to make
+// room." https://github.com/DEFRA/cdp-documentation/blob/main/how-to/managing_cognito_credentials.md
 const OUTCOME_UNKNOWN_MESSAGE =
   'Rotation outcome unknown: a new secret may have been issued. Check the client before retrying.'
 
@@ -32,6 +32,21 @@ const rotateParamsSchema = Joi.object({
 })
 
 const logger = createLogger()
+
+/**
+ * Maps a client from CDP's credentials API (snake_case) to the camelCase this
+ * service returns, matching the GET endpoints. Only these fields are returned,
+ * so nothing else CDP sends is passed on.
+ * @param {{ client_id: string, client_name: string, client_secret: string }} clientDetails
+ * @returns {{ clientId: string, clientName: string, clientSecret: string }}
+ */
+function toClientCredentials({
+  client_id: clientId,
+  client_name: clientName,
+  client_secret: clientSecret
+}) {
+  return { clientId, clientName, clientSecret }
+}
 
 export const clients = [
   {
@@ -149,10 +164,8 @@ export const clients = [
         }
 
         // Return credentials
-        const clientDetails = credentials?.['client_details']?.[0]
-        return h.response({
-          ...clientDetails
-        })
+        const clientDetails = credentials?.['client_details']?.[0] ?? {}
+        return h.response(toClientCredentials(clientDetails))
       } catch (err) {
         logger.error(err.message)
         return Boom.internal()
@@ -277,9 +290,7 @@ export const clients = [
         )
 
         // Only time the new secret is available, so it must be returned
-        return h.response({
-          ...clientDetails
-        })
+        return h.response(toClientCredentials(clientDetails))
       } catch (err) {
         logger.error(err.message)
 
