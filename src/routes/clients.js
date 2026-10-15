@@ -128,11 +128,8 @@ export const clients = [
           db,
           params: { tenantServiceName }
         } = request
+        // Unknown services are already rejected, so no clients is just empty
         const clientRecords = await findClients(tenantServiceName, db)
-
-        if (clientRecords.length === 0) {
-          return Boom.notFound()
-        }
 
         return h.response(clientRecords.map(toClientResponse))
       } catch (err) {

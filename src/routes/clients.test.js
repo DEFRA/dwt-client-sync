@@ -170,14 +170,15 @@ describe('GET Clients for a user pool', () => {
     expect(JSON.parse(response.payload)).toStrictEqual([clientRecords[0]])
   })
 
-  test('Should return a 404 error when the user pool has no clients', async () => {
+  test('Should return an empty list when the user pool has no clients', async () => {
     const response = await server.inject({
       method: 'GET',
       url: `/clients/${clientRecords[0].tenantServiceName}`,
       auth
     })
 
-    expect(response.statusCode).toBe(404)
+    expect(response.statusCode).toBe(200)
+    expect(JSON.parse(response.payload)).toStrictEqual([])
   })
 
   test('Should return a 500 error when an error is thrown', async () => {
