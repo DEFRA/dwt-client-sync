@@ -68,28 +68,36 @@ describe('allCognitoCredentials', () => {
   })
 
   it('returns Cognito credentials successfully', async () => {
-    const expectedResult = [
-      {
-        clientId: 'client-123',
-        clientSecret: 'secret'
-      }
-    ]
-
     mockGet.mockResolvedValue({
       res: {
         statusCode: 200
       },
-      payload: expectedResult
+      payload: {
+        cognito_user_pool_id: 'eu-west-2_EXAMPLE01',
+        tenant_service_name: 'my-service',
+        client_details: [{ client_name: 'my_client', client_id: 'client-123' }]
+      }
     })
 
     const result = await allCognitoCredentials('my-service')
 
-    expect(result).toEqual(expectedResult)
+    expect(result).toStrictEqual([
+      { clientName: 'my_client', clientId: 'client-123' }
+    ])
     expect(mockSign).toHaveBeenCalledTimes(1)
     expect(mockGet).toHaveBeenCalledTimes(1)
     const [url, options] = mockGet.mock.calls[0]
     expect(url).toBe('https://example.com/clients/my-service')
     expect(options.json).toBe(true)
+  })
+
+  it('returns undefined when the response has no client details', async () => {
+    mockGet.mockResolvedValue({
+      res: { statusCode: 200 },
+      payload: { request_id: 'my_request_id' }
+    })
+
+    expect(await allCognitoCredentials('my-service')).toBeUndefined()
   })
 
   it('throws an error when the backend returns a non-200 status', async () => {
@@ -109,23 +117,30 @@ describe('allCognitoCredentials', () => {
 
 describe('createCognitoCredential', () => {
   it('returns created credentials successfully', async () => {
-    const expectedResult = [
-      {
-        clientId: 'client-456',
-        clientSecret: 'secret'
-      }
-    ]
-
     mockPost.mockResolvedValue({
       res: {
         statusCode: 200
       },
-      payload: expectedResult
+      payload: {
+        client_details: [
+          {
+            client_name: 'new-client',
+            client_id: 'client-456',
+            client_secret: 'secret'
+          }
+        ]
+      }
     })
 
     const result = await createCognitoCredential('my-service', 'new-client')
 
-    expect(result).toEqual(expectedResult)
+    expect(result).toStrictEqual([
+      {
+        clientName: 'new-client',
+        clientId: 'client-456',
+        clientSecret: 'secret'
+      }
+    ])
     expect(mockSign).toHaveBeenCalledTimes(1)
     const [actualBodyToSign] = mockSign.mock.calls[0]
     expect(actualBodyToSign.headers).toStrictEqual({
@@ -157,6 +172,14 @@ describe('createCognitoCredential', () => {
 })
 
 describe('rotateCognitoCredential', () => {
+  // What rotateCognitoCredential returns for rotatedCredentials
+  const rotatedClients = [
+    {
+      clientName: 'my_client',
+      clientId: 'client-789',
+      clientSecret: 'new-secret'
+    }
+  ]
   const rotatedCredentials = {
     cognito_user_pool_id: 'eu-west-2_EXAMPLE01',
     request_id: 'my_request_id',
@@ -187,7 +210,7 @@ describe('rotateCognitoCredential', () => {
 
     const result = await rotateCognitoCredential('my-service', 'my_client')
 
-    expect(result).toEqual(rotatedCredentials)
+    expect(result).toStrictEqual(rotatedClients)
     const [url, options] = mockPost.mock.calls[0]
     expect(url).toBe('https://example.com/rotate-clients/my-service')
     expect(options.json).toBe(true)
@@ -232,7 +255,7 @@ describe('rotateCognitoCredential', () => {
 
     await expect(
       rotateCognitoCredential('my-service', 'my_client')
-    ).resolves.toEqual(rotatedCredentials)
+    ).resolves.toStrictEqual(rotatedClients)
   })
 
   // Wreck's shortcut methods throw a Boom error for 4xx/5xx responses

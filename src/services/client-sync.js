@@ -3,6 +3,7 @@ import { createLogger } from '#/common/helpers/logging/logger.js'
 import { config } from '#/config.js'
 import { acquireLock, releaseLock } from '#/common/helpers/mongo-lock.js'
 import { store } from '#/services/clients.js'
+import { toClientRecord } from '#/models/client-mapper.js'
 
 const logger = createLogger()
 const { serviceSyncList } = config.get('cognito')
@@ -38,24 +39,18 @@ async function sync(db, locker) {
       for (const service of services) {
         logger.info(`Syncing service ${service}...`)
 
-        const credentials = await allCognitoCredentials(service)
+        const cognitoClients = await allCognitoCredentials(service)
 
-        if (!credentials || !credentials.client_details) {
+        if (!cognitoClients) {
           logger.error('No credentials found in Cognito response')
           result.services.push({ serviceName: service, credentialsSynced: 0 })
           continue
         }
 
-        logger.info(
-          `Fetched ${credentials.client_details.length} Cognito credentials`
-        )
+        logger.info(`Fetched ${cognitoClients.length} Cognito credentials`)
 
-        const softwareProviders = credentials.client_details.map(
-          ({ client_name: clientName, client_id: clientId }) => ({
-            clientId,
-            clientName,
-            tenantServiceName: service
-          })
+        const softwareProviders = cognitoClients.map((client) =>
+          toClientRecord(client, service)
         )
 
         logger.info(

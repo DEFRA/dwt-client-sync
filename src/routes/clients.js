@@ -6,6 +6,10 @@ import { createLogger } from '#/common/helpers/logging/logger.js'
 import { sync } from '#/services/client-sync.js'
 import { deleteClient } from '#/services/client-delete.js'
 import {
+  toClientResponse,
+  toClientCredentialsResponse
+} from '#/models/client-mapper.js'
+import {
   createCognitoCredential,
   rotateCognitoCredential,
   RotationError,
@@ -32,21 +36,6 @@ const rotateParamsSchema = Joi.object({
 })
 
 const logger = createLogger()
-
-/**
- * Maps a client from CDP's credentials API (snake_case) to the camelCase this
- * service returns, matching the GET endpoints. Only these fields are returned,
- * so nothing else CDP sends is passed on.
- * @param {{ client_id: string, client_name: string, client_secret: string }} clientDetails
- * @returns {{ clientId: string, clientName: string, clientSecret: string }}
- */
-function toClientCredentials({
-  client_id: clientId,
-  client_name: clientName,
-  client_secret: clientSecret
-}) {
-  return { clientId, clientName, clientSecret }
-}
 
 export const clients = [
   {
@@ -84,7 +73,7 @@ export const clients = [
           return Boom.notFound()
         }
 
-        return h.response(client)
+        return h.response(toClientResponse(client))
       } catch (err) {
         logger.error(err.message)
         return Boom.internal()
@@ -106,7 +95,7 @@ export const clients = [
           return Boom.notFound()
         }
 
-        return h.response(clientRecords)
+        return h.response(clientRecords.map(toClientResponse))
       } catch (err) {
         logger.error(err.message)
         return Boom.internal()
@@ -132,12 +121,12 @@ export const clients = [
         // Check if a client with that name already exists
         // Comparision is case insensitive
         // e.g. client-name == Client-Name == cLieNt-NAmE
-        const allCredentials = await allCognitoCredentials(tenantServiceName)
+        const existingClients = await allCognitoCredentials(tenantServiceName)
         const requestedName = payload.clientName.toLowerCase()
 
-        if (allCredentials?.client_details) {
-          const isDuplicate = allCredentials.client_details.some(
-            (detail) => detail.client_name.toLowerCase() === requestedName
+        if (existingClients) {
+          const isDuplicate = existingClients.some(
+            (client) => client.clientName.toLowerCase() === requestedName
           )
           if (isDuplicate) {
             return Boom.conflict(
@@ -147,7 +136,7 @@ export const clients = [
         }
 
         // Send creation request to cognito
-        const credentials = await createCognitoCredential(
+        const createdClients = await createCognitoCredential(
           tenantServiceName,
           payload.clientName
         )
@@ -164,8 +153,8 @@ export const clients = [
         }
 
         // Return credentials
-        const clientDetails = credentials?.['client_details']?.[0] ?? {}
-        return h.response(toClientCredentials(clientDetails))
+        const createdClient = createdClients?.[0] ?? {}
+        return h.response(toClientCredentialsResponse(createdClient))
       } catch (err) {
         logger.error(err.message)
         return Boom.internal()
@@ -240,12 +229,10 @@ export const clients = [
           return Boom.notFound()
         }
 
-        const credentials = await rotateCognitoCredential(
+        const rotatedClients = await rotateCognitoCredential(
           tenantServiceName,
           client.clientName
         )
-
-        const rotatedClients = credentials?.['client_details']
 
         // A success response we can't read: CDP may still have rotated
         if (!Array.isArray(rotatedClients)) {
@@ -262,12 +249,12 @@ export const clients = [
         }
 
         // Names aren't unique in Cognito, so pick out this client
-        const clientDetails = rotatedClients.find(
-          (details) => details.client_id === clientId
+        const rotatedClient = rotatedClients.find(
+          (rotated) => rotated.clientId === clientId
         )
 
         const otherRotatedClients = rotatedClients.filter(
-          (details) => details.client_id !== clientId
+          (rotated) => rotated.clientId !== clientId
         )
         if (otherRotatedClients.length > 0) {
           logger.warn(
@@ -276,7 +263,7 @@ export const clients = [
         }
 
         // CDP rotated other clients with the stored name, but not this one
-        if (!clientDetails) {
+        if (!rotatedClient) {
           logger.error(
             `Client ${clientId} is out of date: its name belongs to a different client in Cognito`
           )
@@ -290,7 +277,7 @@ export const clients = [
         )
 
         // Only time the new secret is available, so it must be returned
-        return h.response(toClientCredentials(clientDetails))
+        return h.response(toClientCredentialsResponse(rotatedClient))
       } catch (err) {
         logger.error(err.message)
 

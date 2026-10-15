@@ -19,7 +19,7 @@ const { MockRotationError } = vi.hoisted(() => ({
 }))
 
 vi.mock('#/common/helpers/cognito-client.js', () => ({
-  allCognitoCredentials: vi.fn().mockResolvedValue({}),
+  allCognitoCredentials: vi.fn().mockResolvedValue([]),
   createCognitoCredential: vi.fn(),
   rotateCognitoCredential: vi.fn(),
   deleteCognitoCredential: vi.fn(),
@@ -56,6 +56,17 @@ describe('Client Routes', () => {
   describe('GET Client', () => {
     it('should return a client when client is found', async () => {
       vi.spyOn(clientService, 'findClient').mockReturnValue(clientRecord)
+
+      await clients[1].handler(request, h)
+
+      expect(h.response).toHaveBeenCalledWith(clientRecord)
+    })
+
+    it('should return only the published fields of the stored client', async () => {
+      vi.spyOn(clientService, 'findClient').mockReturnValue({
+        ...clientRecord,
+        lastSynced: '2026-10-15T12:00:00Z'
+      })
 
       await clients[1].handler(request, h)
 
@@ -145,6 +156,20 @@ describe('GET Clients for a user pool', () => {
     expect(JSON.parse(response.payload)).toEqual(clientRecords)
   })
 
+  test('Should return only the published fields of stored clients', async () => {
+    await server.db
+      .collection('clients')
+      .insertOne({ ...clientRecords[0], lastSynced: '2026-10-15T12:00:00Z' })
+
+    const response = await server.inject({
+      method: 'GET',
+      url: `/clients/${clientRecords[0].tenantServiceName}`,
+      auth
+    })
+
+    expect(JSON.parse(response.payload)).toStrictEqual([clientRecords[0]])
+  })
+
   test('Should return a 404 error when the user pool has no clients', async () => {
     const response = await server.inject({
       method: 'GET',
@@ -199,12 +224,10 @@ describe('POST Clients sync', () => {
   })
 
   test('Should return all synced clients', async () => {
-    allCognitoCredentials.mockResolvedValue({
-      client_details: [
-        { client_name: 'Client One', client_id: 'client-1' },
-        { client_name: 'Client Two', client_id: 'client-2' }
-      ]
-    })
+    allCognitoCredentials.mockResolvedValue([
+      { clientName: 'Client One', clientId: 'client-1' },
+      { clientName: 'Client Two', clientId: 'client-2' }
+    ])
 
     const response = await server.inject({
       method: 'POST',
@@ -225,7 +248,7 @@ describe('POST Clients sync', () => {
     )
   })
   test('Should return zero credentials synced when Cognito returns no client details', async () => {
-    allCognitoCredentials.mockResolvedValue({ body: { client_details: [] } })
+    allCognitoCredentials.mockResolvedValue(undefined)
 
     const response = await server.inject({
       method: 'POST',
@@ -298,18 +321,13 @@ describe('POST Clients', () => {
       services: []
     })
 
-    createCognitoCredential.mockResolvedValue({
-      cognito_user_pool_id: 'eu-west-2_EXAMPLE01',
-      request_id: 'my_request_id',
-      tenant_service_name: 'my-example-service',
-      client_details: [
-        {
-          client_name: 'goodName1-_.',
-          client_id: 'my_client_id',
-          client_secret: 'my_client_secret'
-        }
-      ]
-    })
+    createCognitoCredential.mockResolvedValue([
+      {
+        clientName: 'goodName1-_.',
+        clientId: 'my_client_id',
+        clientSecret: 'my_client_secret'
+      }
+    ])
   })
 
   afterEach(() => {
@@ -357,15 +375,9 @@ describe('POST Clients', () => {
   })
 
   it('returns a 409 error when a client name already exists (case-insensitive)', async () => {
-    allCognitoCredentials.mockResolvedValueOnce({
-      client_details: [
-        {
-          client_name: 'Existing-Client',
-          client_id: 'existing-id',
-          client_secret: 'existing-secret'
-        }
-      ]
-    })
+    allCognitoCredentials.mockResolvedValueOnce([
+      { clientName: 'Existing-Client', clientId: 'existing-id' }
+    ])
 
     const response = await server.inject({
       method: 'POST',
@@ -450,9 +462,9 @@ describe('POST Clients rotate', () => {
   const clientId = 'my_client_id'
   const url = `/clients/${tenantServiceName}/${clientId}/rotate`
   const rotatedClient = {
-    client_name: 'Test Client',
-    client_id: clientId,
-    client_secret: 'my_new_client_secret'
+    clientName: 'Test Client',
+    clientId,
+    clientSecret: 'my_new_client_secret'
   }
   // What the endpoint returns for rotatedClient
   const rotatedCredentials = {
@@ -482,12 +494,7 @@ describe('POST Clients rotate', () => {
       tenantServiceName
     })
 
-    rotateCognitoCredential.mockResolvedValue({
-      cognito_user_pool_id: 'eu-west-2_EXAMPLE01',
-      request_id: 'my_request_id',
-      tenant_service_name: tenantServiceName,
-      client_details: [rotatedClient]
-    })
+    rotateCognitoCredential.mockResolvedValue([rotatedClient])
   })
 
   afterEach(() => {
@@ -505,10 +512,10 @@ describe('POST Clients rotate', () => {
     )
   })
 
-  it('returns only the client fields, not anything else CDP sends', async () => {
-    rotateCognitoCredential.mockResolvedValue({
-      client_details: [{ ...rotatedClient, created_at: '2026-10-14T12:00:00Z' }]
-    })
+  it('returns only the client fields, not anything else', async () => {
+    rotateCognitoCredential.mockResolvedValue([
+      { ...rotatedClient, createdAt: '2026-10-14T12:00:00Z' }
+    ])
 
     const response = await server.inject({ method: 'POST', url, auth })
 
@@ -525,7 +532,7 @@ describe('POST Clients rotate', () => {
   })
 
   it('returns a 404 error when Cognito skips the client', async () => {
-    rotateCognitoCredential.mockResolvedValue({ client_details: [] })
+    rotateCognitoCredential.mockResolvedValue([])
 
     const response = await server.inject({ method: 'POST', url, auth })
 
@@ -533,16 +540,14 @@ describe('POST Clients rotate', () => {
   })
 
   it('returns only this client and warns when others share its name', async () => {
-    rotateCognitoCredential.mockResolvedValue({
-      client_details: [
-        {
-          client_name: 'Test Client',
-          client_id: 'other_client_id',
-          client_secret: 'other_secret'
-        },
-        rotatedClient
-      ]
-    })
+    rotateCognitoCredential.mockResolvedValue([
+      {
+        clientName: 'Test Client',
+        clientId: 'other_client_id',
+        clientSecret: 'other_secret'
+      },
+      rotatedClient
+    ])
 
     const response = await server.inject({ method: 'POST', url, auth })
 
@@ -587,33 +592,25 @@ describe('POST Clients rotate', () => {
     )
   })
 
-  it.each([
-    ['no payload', null],
-    ['no client details', { request_id: 'my_request_id' }]
-  ])(
-    'returns a 502 error with an unknown outcome when CDP succeeds with %s',
-    async (_, payload) => {
-      rotateCognitoCredential.mockResolvedValue(payload)
+  it('returns a 502 error with an unknown outcome when CDP succeeds without client details', async () => {
+    rotateCognitoCredential.mockResolvedValue(undefined)
 
-      const response = await server.inject({ method: 'POST', url, auth })
+    const response = await server.inject({ method: 'POST', url, auth })
 
-      expect(response.statusCode).toBe(502)
-      expect(JSON.parse(response.payload).message).toBe(
-        'Rotation outcome unknown: a new secret may have been issued. Check the client before retrying.'
-      )
-    }
-  )
+    expect(response.statusCode).toBe(502)
+    expect(JSON.parse(response.payload).message).toBe(
+      'Rotation outcome unknown: a new secret may have been issued. Check the client before retrying.'
+    )
+  })
 
   it('returns a 409 error when CDP rotates a different client with the stored name', async () => {
-    rotateCognitoCredential.mockResolvedValue({
-      client_details: [
-        {
-          client_name: 'Test Client',
-          client_id: 'other_client_id',
-          client_secret: 'other_secret'
-        }
-      ]
-    })
+    rotateCognitoCredential.mockResolvedValue([
+      {
+        clientName: 'Test Client',
+        clientId: 'other_client_id',
+        clientSecret: 'other_secret'
+      }
+    ])
 
     const response = await server.inject({ method: 'POST', url, auth })
 
@@ -637,7 +634,7 @@ describe('POST Clients rotate', () => {
       `Client secret rotation requested by test for client ${clientId} of ${tenantServiceName}`
     )
     const loggedText = JSON.stringify(mockLogger.info.mock.calls)
-    expect(loggedText).not.toContain(rotatedClient.client_secret)
+    expect(loggedText).not.toContain(rotatedClient.clientSecret)
   })
 
   it.each([

@@ -4,13 +4,17 @@ import { config } from '#/config.js'
 const collectionName = config.get('mongo.collectionName')
 
 /**
- * Finds a waste input for the given tenantServiceName and clientId in the given db.
+ * @typedef {import('#/models/client-mapper.js').ClientRecord} ClientRecord
+ */
+
+/**
+ * Finds the client for the given tenantServiceName and clientId in the given db.
  *
  * @param {String} tenantServiceName - The tenant service name (can be found with `config.get('serviceName')`)
  * @param {String} clientId - The client id
  * @param {MongoDb} db - The db
  *
- * @returns {Promise<{clientName: String, clientId: String, tenantServiceName: String}>} The waste inputs
+ * @returns {Promise<ClientRecord | null>} The stored client
  */
 export function findClient(tenantServiceName, clientId, db) {
   return db
@@ -19,12 +23,12 @@ export function findClient(tenantServiceName, clientId, db) {
 }
 
 /**
- * Finds waste inputs for the given tenantServiceName in the given db.
+ * Finds the clients for the given tenantServiceName in the given db.
  *
  * @param {String} tenantServiceName - The tenant service name (can be found with `config.get('serviceName')`)
  * @param {MongoDb} db - The db
  *
- * @returns {Promise<{clientName: String, clientId: String, tenantServiceName: String}[]>} The waste inputs
+ * @returns {Promise<ClientRecord[]>} The stored clients
  */
 export function findClients(tenantServiceName, db) {
   return db
@@ -33,6 +37,14 @@ export function findClients(tenantServiceName, db) {
     .toArray()
 }
 
+/**
+ * Makes the stored clients for the given tenantServiceName match the given clients.
+ *
+ * @param {Logger} logger - The logger
+ * @param {MongoDb} db - The db
+ * @param {ClientRecord[]} incomingClients - Every client the service now has
+ * @param {String} tenantServiceName - The tenant service name
+ */
 export async function store(logger, db, incomingClients, tenantServiceName) {
   let existing
 
