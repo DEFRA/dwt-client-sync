@@ -91,10 +91,14 @@ describe('allCognitoCredentials', () => {
     expect(options.json).toBe(true)
   })
 
-  it('returns undefined when the response has no client details', async () => {
+  it.each([
+    ['no client details', { request_id: 'my_request_id' }],
+    ['client details that are not a list', { client_details: {} }],
+    ['no payload', null]
+  ])('returns undefined when the response has %s', async (_, payload) => {
     mockGet.mockResolvedValue({
       res: { statusCode: 200 },
-      payload: { request_id: 'my_request_id' }
+      payload
     })
 
     expect(await allCognitoCredentials('my-service')).toBeUndefined()

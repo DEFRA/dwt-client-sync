@@ -144,6 +144,22 @@ describe('Software Provider sync', () => {
         }
       ]
     })
+
+    // Missing details must never be taken as "no clients", which deletes them all
+    expect(mockStore).not.toHaveBeenCalled()
+  })
+
+  it('removes every stored client when Cognito returns no clients', async () => {
+    mockAllCognitoCredentials.mockResolvedValue([])
+
+    await sync()
+
+    expect(mockStore).toHaveBeenCalledWith(
+      expect.anything(),
+      undefined,
+      [],
+      'service-one'
+    )
   })
 
   it('handles errors fetching credentials', async () => {

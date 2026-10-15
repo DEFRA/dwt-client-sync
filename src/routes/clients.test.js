@@ -396,6 +396,22 @@ describe('POST Clients', () => {
     expect(clientSyncService.sync).not.toHaveBeenCalled()
   })
 
+  it('creates the client when Cognito returns no client details to check', async () => {
+    allCognitoCredentials.mockResolvedValueOnce(undefined)
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/clients/myTenantServiceName',
+      auth,
+      payload: {
+        clientName: 'goodName1-_.'
+      }
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(createCognitoCredential).toHaveBeenCalled()
+  })
+
   it('syncs database when validation passes', async () => {
     const response = await server.inject({
       method: 'POST',
