@@ -151,14 +151,21 @@ describe('Software Provider sync', () => {
 
   it('removes every stored client when Cognito returns no clients', async () => {
     mockAllCognitoCredentials.mockResolvedValue([])
+    const db = {}
 
-    await sync()
+    await sync(db)
 
     expect(mockStore).toHaveBeenCalledWith(
       expect.anything(),
-      undefined,
+      db,
       [],
       'service-one'
+    )
+    expect(mockStore).toHaveBeenCalledWith(
+      expect.anything(),
+      db,
+      [],
+      'service-two'
     )
   })
 

@@ -1,6 +1,8 @@
 /**
  * The client models, following ADR 9 (separate external and internal models).
  * This mapper is the only code that knows both the stored and returned shapes.
+ * ClientRecord and ClientResponse hold the same fields today, but are kept
+ * apart so what's stored can change without changing the published response.
  *
  * @typedef {import('#/common/helpers/cognito-client.js').CognitoClient} CognitoClient
  *

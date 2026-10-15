@@ -403,7 +403,11 @@ describe('deleteCognitoCredential', () => {
     },
     {
       clientDetails: ['Not empty']
-    }
+    },
+    {
+      client_details: [{ client_name: 'my_client', client_id: 'client-1' }]
+    },
+    null
   ])('throws an error if the backend returns %o', async (payload) => {
     mockPost.mockResolvedValue({
       res: { statusCode: 500 },
