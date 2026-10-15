@@ -1,12 +1,11 @@
 import { allCognitoCredentials } from '#/common/helpers/cognito-client.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
-import { config } from '#/config.js'
 import { acquireLock, releaseLock } from '#/common/helpers/mongo-lock.js'
 import { store } from '#/services/clients.js'
 import { toClientRecord } from '#/models/client-mapper.js'
+import { managedServices } from '#/common/helpers/managed-services.js'
 
 const logger = createLogger()
-const { serviceSyncList } = config.get('cognito')
 async function sync(db, locker) {
   logger.info('Software Provider sync starting')
   let lock
@@ -17,12 +16,7 @@ async function sync(db, locker) {
   }
 
   try {
-    const services = serviceSyncList
-      ? serviceSyncList
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : []
+    const services = managedServices()
 
     if (services.length === 0) {
       logger.info('No services configured to sync, skipping.')

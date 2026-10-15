@@ -52,7 +52,7 @@ const {
   createCognitoCredential,
   rotateCognitoCredential,
   deleteCognitoCredential,
-  RotationError
+  CdpError
 } = await import('./cognito-client.js')
 
 describe('allCognitoCredentials', () => {
@@ -168,11 +168,35 @@ describe('createCognitoCredential', () => {
 
     await expect(
       createCognitoCredential('my-service', 'new-client')
-    ).rejects.toThrow(
-      'Failed to create Cognito credentials.\n      Status code: 500'
-    )
+    ).rejects.toThrow('Failed to create Cognito credentials. Status code: 500')
     expect(mockSign).toHaveBeenCalledTimes(1)
   })
+
+  it.each([
+    ['refuses the request', 403, false],
+    ['returns a server error', 503, true]
+  ])(
+    'says whether CDP may have created the client when it %s',
+    async (_, statusCode, outcomeUnknown) => {
+      mockPost.mockRejectedValue(
+        new Boom.Boom(`Response Error: ${statusCode}`, {
+          statusCode,
+          data: { isResponseError: true }
+        })
+      )
+
+      const error = await createCognitoCredential(
+        'my-service',
+        'new-client'
+      ).catch((err) => err)
+
+      expect(error).toBeInstanceOf(CdpError)
+      expect(error.outcomeUnknown).toBe(outcomeUnknown)
+      expect(error.message).toBe(
+        `Failed to create Cognito credentials: Response Error: ${statusCode}`
+      )
+    }
+  )
 })
 
 describe('rotateCognitoCredential', () => {
@@ -277,7 +301,7 @@ describe('rotateCognitoCredential', () => {
       'my_client'
     ).catch((err) => err)
 
-    expect(error).toBeInstanceOf(RotationError)
+    expect(error).toBeInstanceOf(CdpError)
     expect(error.outcomeUnknown).toBe(false)
     expect(error.message).toBe(
       'Failed to rotate Cognito credentials: Response Error: 403'
@@ -296,7 +320,7 @@ describe('rotateCognitoCredential', () => {
       'my_client'
     ).catch((e) => e)
 
-    expect(error).toBeInstanceOf(RotationError)
+    expect(error).toBeInstanceOf(CdpError)
     expect(error.outcomeUnknown).toBe(true)
   })
 
@@ -308,7 +332,7 @@ describe('rotateCognitoCredential', () => {
       'my_client'
     ).catch((err) => err)
 
-    expect(error).toBeInstanceOf(RotationError)
+    expect(error).toBeInstanceOf(CdpError)
     expect(error.outcomeUnknown).toBe(false)
   })
 })

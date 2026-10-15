@@ -20,14 +20,14 @@ const {
 } = config.get('cognito')
 
 /**
- * A failed rotate request. `outcomeUnknown` is true when CDP may still have
- * issued a new secret (timeout, network error, 5xx or unreadable response),
- * and false when CDP refused the request (4xx), so nothing was rotated.
+ * A failed create or rotate request. `outcomeUnknown` is true when CDP may
+ * still have made the change (timeout, network error, 5xx or unreadable
+ * response), and false when CDP refused the request (4xx), so nothing changed.
  */
-class RotationError extends Error {
+class CdpError extends Error {
   constructor(message, { outcomeUnknown, cause }) {
     super(message, { cause })
-    this.name = 'RotationError'
+    this.name = 'CdpError'
     this.outcomeUnknown = outcomeUnknown
   }
 }
@@ -65,6 +65,47 @@ function toCognitoClients(payload) {
       ...(clientSecret !== undefined && { clientSecret })
     })
   )
+}
+
+/**
+ * Sends a signed POST to CDP, throwing a CdpError that says whether CDP may
+ * still have acted if the request fails. The response can hold client
+ * secrets, so it's never logged.
+ * @param {string} action - What the request does, for error messages
+ * @param {string} uri
+ * @param {{ headers: object, body: string }} signed - The signed request
+ * @param {object} [options] - Extra Wreck options
+ * @returns {Promise<object>} The response payload
+ */
+async function postToCdp(action, uri, signed, options = {}) {
+  let response
+  try {
+    response = await Wreck.post(uri, {
+      headers: signed.headers,
+      json: true,
+      payload: signed.body,
+      ...options
+    })
+  } catch (err) {
+    // Wreck throws for 4xx/5xx responses as well as timeouts, network and
+    // parse errors. Only a 4xx means CDP refused the request
+    const statusCode = err.data?.isResponseError
+      ? err.output?.statusCode
+      : undefined
+    const refused = statusCode >= 400 && statusCode < 500
+    const message = `Failed to ${action} Cognito credentials: ${err.message}`
+    logger.error(message)
+    throw new CdpError(message, { outcomeUnknown: !refused, cause: err })
+  }
+
+  const { statusCode } = response.res
+  if (statusCode < 200 || statusCode >= 300) {
+    const message = `Failed to ${action} Cognito credentials. Status code: ${statusCode}`
+    logger.error(message)
+    throw new CdpError(message, { outcomeUnknown: false })
+  }
+
+  return response.payload
 }
 
 const signer = new SignatureV4({
@@ -148,22 +189,7 @@ async function createCognitoCredential(serviceName, newClientName) {
 
   logger.info(uri)
 
-  const { res, payload } = await Wreck.post(uri, {
-    headers: signed.headers,
-    json: true,
-    payload: signed.body
-  })
-
-  if (res.statusCode !== 200) {
-    logger.error(
-      `failed to create Cognito credentials.
-      Status code: ${res.statusCode}`
-    )
-    throw new Error(
-      `Failed to create Cognito credentials.
-      Status code: ${res.statusCode}`
-    )
-  }
+  const payload = await postToCdp('create', uri, signed)
 
   logger.info(
     'Successfully created Cognito credentials from the backend service.'
@@ -207,37 +233,13 @@ async function rotateCognitoCredential(serviceName, clientName) {
 
   logger.info(uri)
 
-  // The response holds the new client secret, so it's never logged
-  let response
-  try {
-    response = await Wreck.post(uri, {
-      headers: signed.headers,
-      json: true,
-      payload: signed.body,
-      timeout: rotateTimeoutMs
-    })
-  } catch (err) {
-    // Wreck throws for 4xx/5xx responses as well as timeouts, network and
-    // parse errors. Only a 4xx means CDP refused the rotation
-    const statusCode = err.data?.isResponseError
-      ? err.output?.statusCode
-      : undefined
-    const refused = statusCode >= 400 && statusCode < 500
-    const message = `Failed to rotate Cognito credentials: ${err.message}`
-    logger.error(message)
-    throw new RotationError(message, { outcomeUnknown: !refused, cause: err })
-  }
-
-  const { statusCode } = response.res
-  if (statusCode < 200 || statusCode >= 300) {
-    const message = `Failed to rotate Cognito credentials. Status code: ${statusCode}`
-    logger.error(message)
-    throw new RotationError(message, { outcomeUnknown: false })
-  }
+  const payload = await postToCdp('rotate', uri, signed, {
+    timeout: rotateTimeoutMs
+  })
 
   logger.info('Successfully rotated Cognito credentials')
 
-  return toCognitoClients(response.payload)
+  return toCognitoClients(payload)
 }
 
 async function deleteCognitoCredential(serviceName, clientName) {
@@ -295,5 +297,5 @@ export {
   createCognitoCredential,
   rotateCognitoCredential,
   deleteCognitoCredential,
-  RotationError
+  CdpError
 }
