@@ -408,15 +408,20 @@ describe('deleteCognitoCredential', () => {
       client_details: [{ client_name: 'my_client', client_id: 'client-1' }]
     },
     null
-  ])('throws an error if the backend returns %o', async (payload) => {
-    mockPost.mockResolvedValue({
-      res: { statusCode: 500 },
-      payload
-    })
+  ])(
+    'throws an error if the backend succeeds but returns %o',
+    async (payload) => {
+      mockPost.mockResolvedValue({
+        res: { statusCode: 200 },
+        payload
+      })
 
-    await expect(
-      deleteCognitoCredential('my-service', 'my_client')
-    ).rejects.toThrow('Failed to delete Cognito credentials. Status code: 500')
-    expect(mockSign).toHaveBeenCalledTimes(1)
-  })
+      await expect(
+        deleteCognitoCredential('my-service', 'my_client')
+      ).rejects.toThrow(
+        'Failed to delete Cognito credentials. Status code: 200'
+      )
+      expect(mockSign).toHaveBeenCalledTimes(1)
+    }
+  )
 })
