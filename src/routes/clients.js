@@ -3,6 +3,7 @@ import Joi from 'joi'
 import { clientSchema } from '#/common/helpers/validation.js'
 import { findClient, findClients } from '#/services/clients.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
+import { managedServices } from '#/common/helpers/managed-services.js'
 import { sync } from '#/services/client-sync.js'
 import { deleteClient } from '#/services/client-delete.js'
 import {
@@ -12,7 +13,7 @@ import {
 import {
   createCognitoCredential,
   rotateCognitoCredential,
-  RotationError,
+  CdpError,
   deleteCognitoCredential,
   allCognitoCredentials
 } from '#/common/helpers/cognito-client.js'
@@ -25,6 +26,11 @@ import {
 const OUTCOME_UNKNOWN_MESSAGE =
   'Rotation outcome unknown: a new secret may have been issued. Check the client before retrying.'
 
+// CDP returns a new client's secret only once, and a retry is skipped as a
+// duplicate, so the caller can only get a secret by rotating
+const CREATE_OUTCOME_UNKNOWN_MESSAGE =
+  "Create outcome unknown: the client may have been created, but its secret couldn't be returned. Check the client, and rotate its secret if it exists."
+
 // CDP service names are lowercase kebab-case; Cognito client ids match [\w+]+
 const rotateParamsSchema = Joi.object({
   tenantServiceName: Joi.string()
@@ -36,6 +42,43 @@ const rotateParamsSchema = Joi.object({
 })
 
 const logger = createLogger()
+
+/**
+ * @param {string} clientName
+ * @returns {Boom.Boom} A 409 naming the client
+ */
+function clientNameTaken(clientName) {
+  return Boom.conflict(
+    `Client name '${clientName}' already exists (case insensitive)`
+  )
+}
+
+/**
+ * @param {string} tenantServiceName
+ * @param {string} clientId
+ * @returns {Boom.Boom} A 404 naming the client and service
+ */
+function clientNotFound(tenantServiceName, clientId) {
+  return Boom.notFound(
+    `Client '${clientId}' not found for tenant service '${tenantServiceName}'`
+  )
+}
+
+// CDP doesn't validate service names, so an unknown one fails there with an
+// unhelpful 400 or 500. Only the services this service syncs are managed here
+const checkTenantService = {
+  method: (request, h) => {
+    const { tenantServiceName } = request.params
+
+    if (!managedServices().includes(tenantServiceName)) {
+      return Boom.notFound(
+        `Tenant service '${tenantServiceName}' is not managed by dwt-client-sync`
+      )
+    }
+
+    return h.continue
+  }
+}
 
 export const clients = [
   {
@@ -61,6 +104,9 @@ export const clients = [
   {
     method: 'GET',
     path: '/clients/{tenantServiceName}/{clientId}',
+    options: {
+      pre: [checkTenantService]
+    },
     handler: async (request, h) => {
       try {
         const {
@@ -70,7 +116,7 @@ export const clients = [
         const client = await findClient(tenantServiceName, clientId, db)
 
         if (!client) {
-          return Boom.notFound()
+          return clientNotFound(tenantServiceName, clientId)
         }
 
         return h.response(toClientResponse(client))
@@ -83,17 +129,17 @@ export const clients = [
   {
     method: 'GET',
     path: '/clients/{tenantServiceName}',
+    options: {
+      pre: [checkTenantService]
+    },
     handler: async (request, h) => {
       try {
         const {
           db,
           params: { tenantServiceName }
         } = request
+        // Unknown services are already rejected, so no clients is just empty
         const clientRecords = await findClients(tenantServiceName, db)
-
-        if (clientRecords.length === 0) {
-          return Boom.notFound()
-        }
 
         return h.response(clientRecords.map(toClientResponse))
       } catch (err) {
@@ -108,6 +154,11 @@ export const clients = [
     options: {
       validate: {
         payload: clientSchema
+      },
+      pre: [checkTenantService],
+      // Responses can hold a client secret
+      cache: {
+        otherwise: 'no-store'
       }
     },
     handler: async (request, h) => {
@@ -121,25 +172,45 @@ export const clients = [
         // Check if a client with that name already exists
         // Comparision is case insensitive
         // e.g. client-name == Client-Name == cLieNt-NAmE
-        const existingClients = await allCognitoCredentials(tenantServiceName)
-        const requestedName = payload.clientName.toLowerCase()
+        let existingClients
+        try {
+          existingClients = await allCognitoCredentials(tenantServiceName)
+        } catch (err) {
+          logger.error(`Listing clients before create failed: ${err.message}`)
+        }
 
-        if (existingClients) {
-          const isDuplicate = existingClients.some(
-            (client) => client.clientName.toLowerCase() === requestedName
+        // Without the existing clients, a duplicate name can't be ruled out
+        if (!existingClients) {
+          return Boom.badGateway(
+            "Couldn't check the existing client names in CDP, so no client was created"
           )
-          if (isDuplicate) {
-            return Boom.conflict(
-              `Client name '${requestedName}' already exists (case insensitive)`
-            )
-          }
+        }
+
+        const requestedName = payload.clientName.toLowerCase()
+        const isDuplicate = existingClients.some(
+          (client) => client.clientName?.toLowerCase() === requestedName
+        )
+        if (isDuplicate) {
+          return clientNameTaken(payload.clientName)
         }
 
         // Send creation request to cognito
-        const createdClients = await createCognitoCredential(
-          tenantServiceName,
-          payload.clientName
-        )
+        let createdClients
+        try {
+          createdClients = await createCognitoCredential(
+            tenantServiceName,
+            payload.clientName
+          )
+        } catch (err) {
+          if (err instanceof CdpError) {
+            return err.outcomeUnknown
+              ? Boom.badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE)
+              : Boom.badGateway(
+                  'CDP refused the create request, so no client was created'
+                )
+          }
+          throw err
+        }
 
         // Sync
         logger.info('Sync client called')
@@ -152,8 +223,27 @@ export const clients = [
           logger.error(`Sync failed with error: ${err.message}`)
         }
 
-        // Return credentials
-        const createdClient = createdClients?.[0] ?? {}
+        // A success response we can't read: CDP may still have created it
+        if (!Array.isArray(createdClients)) {
+          logger.error("CDP's create response has no client details")
+          return Boom.badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE)
+        }
+
+        // CDP skips names that already exist, so nothing was created
+        if (createdClients.length === 0) {
+          return clientNameTaken(payload.clientName)
+        }
+
+        const createdClient = createdClients.find(
+          (client) => client.clientName === payload.clientName
+        )
+
+        if (!createdClient?.clientSecret) {
+          logger.error("CDP's create response has no secret for the client")
+          return Boom.badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE)
+        }
+
+        // Only time the secret is available, so it must be returned
         return h.response(toClientCredentialsResponse(createdClient))
       } catch (err) {
         logger.error(err.message)
@@ -164,6 +254,9 @@ export const clients = [
   {
     method: 'DELETE',
     path: '/clients/{tenantServiceName}/{clientId}',
+    options: {
+      pre: [checkTenantService]
+    },
     handler: async (request, h) => {
       try {
         const {
@@ -176,7 +269,7 @@ export const clients = [
         const client = await findClient(tenantServiceName, clientId, db)
 
         if (!client) {
-          return Boom.notFound()
+          return clientNotFound(tenantServiceName, clientId)
         }
 
         await deleteCognitoCredential(tenantServiceName, client.clientName)
@@ -205,6 +298,7 @@ export const clients = [
       validate: {
         params: rotateParamsSchema
       },
+      pre: [checkTenantService],
       // Responses can hold a client secret
       cache: {
         otherwise: 'no-store'
@@ -226,7 +320,7 @@ export const clients = [
         const client = await findClient(tenantServiceName, clientId, db)
 
         if (!client) {
-          return Boom.notFound()
+          return clientNotFound(tenantServiceName, clientId)
         }
 
         const rotatedClients = await rotateCognitoCredential(
@@ -281,7 +375,7 @@ export const clients = [
       } catch (err) {
         logger.error(err.message)
 
-        if (err instanceof RotationError) {
+        if (err instanceof CdpError) {
           return err.outcomeUnknown
             ? Boom.badGateway(OUTCOME_UNKNOWN_MESSAGE)
             : Boom.badGateway('CDP refused the rotation request')

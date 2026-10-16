@@ -35,6 +35,7 @@ vi.mock('#/config.js', () => ({
       deleteClientsPath: '/delete-clients/{service_name}',
       rotateClientsPath: '/rotate-clients/{service-name}',
       rotateTimeoutMs: 5000,
+      createTimeoutMs: 6000,
       protocol: 'https'
     }))
   }
@@ -52,7 +53,7 @@ const {
   createCognitoCredential,
   rotateCognitoCredential,
   deleteCognitoCredential,
-  RotationError
+  CdpError
 } = await import('./cognito-client.js')
 
 describe('allCognitoCredentials', () => {
@@ -94,6 +95,10 @@ describe('allCognitoCredentials', () => {
   it.each([
     ['no client details', { request_id: 'my_request_id' }],
     ['client details that are not a list', { client_details: {} }],
+    [
+      'a client that is not an object',
+      { client_details: [null, { client_name: 'a', client_id: 'b' }] }
+    ],
     ['no payload', null]
   ])('returns undefined when the response has %s', async (_, payload) => {
     mockGet.mockResolvedValue({
@@ -168,11 +173,47 @@ describe('createCognitoCredential', () => {
 
     await expect(
       createCognitoCredential('my-service', 'new-client')
-    ).rejects.toThrow(
-      'Failed to create Cognito credentials.\n      Status code: 500'
-    )
+    ).rejects.toThrow('Failed to create Cognito credentials. Status code: 500')
     expect(mockSign).toHaveBeenCalledTimes(1)
   })
+
+  it('sets a timeout', async () => {
+    mockPost.mockResolvedValue({
+      res: { statusCode: 200 },
+      payload: { client_details: [] }
+    })
+
+    await createCognitoCredential('my-service', 'new-client')
+
+    const options = mockPost.mock.calls[0][1]
+    expect(options.timeout).toBe(6000)
+  })
+
+  it.each([
+    ['refuses the request', 403, false],
+    ['returns a server error', 503, true]
+  ])(
+    'says whether CDP may have created the client when it %s',
+    async (_, statusCode, outcomeUnknown) => {
+      mockPost.mockRejectedValue(
+        new Boom.Boom(`Response Error: ${statusCode}`, {
+          statusCode,
+          data: { isResponseError: true }
+        })
+      )
+
+      const error = await createCognitoCredential(
+        'my-service',
+        'new-client'
+      ).catch((err) => err)
+
+      expect(error).toBeInstanceOf(CdpError)
+      expect(error.outcomeUnknown).toBe(outcomeUnknown)
+      expect(error.message).toBe(
+        `Failed to create Cognito credentials: Response Error: ${statusCode}`
+      )
+    }
+  )
 })
 
 describe('rotateCognitoCredential', () => {
@@ -277,7 +318,7 @@ describe('rotateCognitoCredential', () => {
       'my_client'
     ).catch((err) => err)
 
-    expect(error).toBeInstanceOf(RotationError)
+    expect(error).toBeInstanceOf(CdpError)
     expect(error.outcomeUnknown).toBe(false)
     expect(error.message).toBe(
       'Failed to rotate Cognito credentials: Response Error: 403'
@@ -296,7 +337,7 @@ describe('rotateCognitoCredential', () => {
       'my_client'
     ).catch((e) => e)
 
-    expect(error).toBeInstanceOf(RotationError)
+    expect(error).toBeInstanceOf(CdpError)
     expect(error.outcomeUnknown).toBe(true)
   })
 
@@ -308,7 +349,7 @@ describe('rotateCognitoCredential', () => {
       'my_client'
     ).catch((err) => err)
 
-    expect(error).toBeInstanceOf(RotationError)
+    expect(error).toBeInstanceOf(CdpError)
     expect(error.outcomeUnknown).toBe(false)
   })
 })

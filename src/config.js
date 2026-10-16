@@ -205,6 +205,13 @@ export const config = convict({
       format: 'positive-int',
       default: 10000,
       env: 'COGNITO_ROTATE_TIMEOUT_MS'
+    },
+    createTimeoutMs: {
+      // Must be positive, as for rotateTimeoutMs
+      doc: 'Timeout in milliseconds for the Cognito create clients request',
+      format: 'positive-int',
+      default: 10000,
+      env: 'COGNITO_CREATE_TIMEOUT_MS'
     }
   }
 })

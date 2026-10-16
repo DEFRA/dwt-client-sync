@@ -9,8 +9,8 @@ vi.mock('#/common/helpers/logging/logger.js', () => ({
   createLogger: () => mockLogger
 }))
 
-const { MockRotationError } = vi.hoisted(() => ({
-  MockRotationError: class extends Error {
+const { MockCdpError } = vi.hoisted(() => ({
+  MockCdpError: class extends Error {
     constructor(message, { outcomeUnknown }) {
       super(message)
       this.outcomeUnknown = outcomeUnknown
@@ -24,7 +24,7 @@ vi.mock('#/common/helpers/cognito-client.js', () => ({
   rotateCognitoCredential: vi.fn(),
   deleteCognitoCredential: vi.fn(),
   deleteClient: vi.fn(),
-  RotationError: MockRotationError
+  CdpError: MockCdpError
 }))
 
 describe('Client Routes', () => {
@@ -80,7 +80,7 @@ describe('Client Routes', () => {
 
       expect(result.output.payload).toEqual({
         error: 'Not Found',
-        message: 'Not Found',
+        message: `Client '${clientRecord.clientId}' not found for tenant service '${clientRecord.tenantServiceName}'`,
         statusCode: 404
       })
     })
@@ -170,14 +170,15 @@ describe('GET Clients for a user pool', () => {
     expect(JSON.parse(response.payload)).toStrictEqual([clientRecords[0]])
   })
 
-  test('Should return a 404 error when the user pool has no clients', async () => {
+  test('Should return an empty list when the user pool has no clients', async () => {
     const response = await server.inject({
       method: 'GET',
       url: `/clients/${clientRecords[0].tenantServiceName}`,
       auth
     })
 
-    expect(response.statusCode).toBe(404)
+    expect(response.statusCode).toBe(200)
+    expect(JSON.parse(response.payload)).toStrictEqual([])
   })
 
   test('Should return a 500 error when an error is thrown', async () => {
@@ -321,6 +322,7 @@ describe('POST Clients', () => {
       services: []
     })
 
+    allCognitoCredentials.mockResolvedValue([])
     createCognitoCredential.mockResolvedValue([
       {
         clientName: 'goodName1-_.',
@@ -337,7 +339,7 @@ describe('POST Clients', () => {
   it("rejects client names that don't match the regex pattern ^[\\w.-]+$", async () => {
     const response = await server.inject({
       method: 'POST',
-      url: '/clients/myTenantServiceName',
+      url: '/clients/waste-movement-external-api',
       auth,
       payload: {
         clientName: 'badName1 =(^@+@^)='
@@ -358,7 +360,7 @@ describe('POST Clients', () => {
   it('rejects client names longer than 128 characters', async () => {
     const response = await server.inject({
       method: 'POST',
-      url: '/clients/myTenantServiceName',
+      url: '/clients/waste-movement-external-api',
       auth,
       payload: {
         clientName: 'x'.repeat(129)
@@ -381,7 +383,7 @@ describe('POST Clients', () => {
 
     const response = await server.inject({
       method: 'POST',
-      url: '/clients/myTenantServiceName',
+      url: '/clients/waste-movement-external-api',
       auth,
       payload: {
         clientName: 'existing-client'
@@ -396,26 +398,120 @@ describe('POST Clients', () => {
     expect(clientSyncService.sync).not.toHaveBeenCalled()
   })
 
-  it('creates the client when Cognito returns no client details to check', async () => {
-    allCognitoCredentials.mockResolvedValueOnce(undefined)
-
-    const response = await server.inject({
+  const createClient = () =>
+    server.inject({
       method: 'POST',
-      url: '/clients/myTenantServiceName',
+      url: '/clients/waste-movement-external-api',
       auth,
       payload: {
         clientName: 'goodName1-_.'
       }
     })
 
+  const createOutcomeUnknownMessage =
+    "Create outcome unknown: the client may have been created, but its secret couldn't be returned. Check the client, and rotate its secret if it exists."
+
+  it.each([
+    ['returns no client details', () => Promise.resolve(undefined)],
+    ['fails', () => Promise.reject(new Error('Response Error: 500'))]
+  ])(
+    "returns a 502 error without creating the client when listing clients %s, so duplicates can't be checked",
+    async (_, listClients) => {
+      allCognitoCredentials.mockImplementationOnce(listClients)
+
+      const response = await createClient()
+
+      expect(response.statusCode).toBe(502)
+      expect(JSON.parse(response.payload).message).toBe(
+        "Couldn't check the existing client names in CDP, so no client was created"
+      )
+      expect(createCognitoCredential).not.toHaveBeenCalled()
+    }
+  )
+
+  it('ignores a listed client with no name when checking for duplicates', async () => {
+    allCognitoCredentials.mockResolvedValueOnce([{ clientId: 'nameless-id' }])
+
+    const response = await createClient()
+
     expect(response.statusCode).toBe(200)
     expect(createCognitoCredential).toHaveBeenCalled()
+  })
+
+  it('returns a 502 error saying nothing was created when CDP refuses', async () => {
+    createCognitoCredential.mockRejectedValueOnce(
+      new MockCdpError('Refused', { outcomeUnknown: false })
+    )
+
+    const response = await createClient()
+
+    expect(response.statusCode).toBe(502)
+    expect(JSON.parse(response.payload).message).toBe(
+      'CDP refused the create request, so no client was created'
+    )
+  })
+
+  it.each([
+    [
+      'CDP may have created the client',
+      () =>
+        Promise.reject(new MockCdpError('Timed out', { outcomeUnknown: true }))
+    ],
+    ["CDP's response has no client details", () => Promise.resolve(undefined)],
+    [
+      "CDP's response has no secret for the client",
+      () =>
+        Promise.resolve([
+          { clientName: 'goodName1-_.', clientId: 'my_client_id' }
+        ])
+    ],
+    [
+      "CDP's response is for a different client",
+      () =>
+        Promise.resolve([
+          {
+            clientName: 'otherName',
+            clientId: 'other_client_id',
+            clientSecret: 'other_secret'
+          }
+        ])
+    ]
+  ])(
+    'returns a 502 error with an unknown outcome when %s',
+    async (_, create) => {
+      createCognitoCredential.mockImplementationOnce(create)
+
+      const response = await createClient()
+
+      expect(response.statusCode).toBe(502)
+      expect(JSON.parse(response.payload).message).toBe(
+        createOutcomeUnknownMessage
+      )
+    }
+  )
+
+  it('returns a 409 error when CDP skips the name because it already exists', async () => {
+    createCognitoCredential.mockResolvedValueOnce([])
+
+    const response = await createClient()
+
+    expect(response.statusCode).toBe(409)
+    expect(JSON.parse(response.payload).message).toBe(
+      "Client name 'goodName1-_.' already exists (case insensitive)"
+    )
+  })
+
+  it('tells clients not to store the response', async () => {
+    const response = await createClient()
+
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['cache-control']).toBe('no-store')
   })
 
   it('syncs database when validation passes', async () => {
     const response = await server.inject({
       method: 'POST',
-      url: '/clients/myTenantServiceName',
+      url: '/clients/waste-movement-external-api',
       auth,
       payload: {
         clientName: 'goodName1-_.'
@@ -429,7 +525,7 @@ describe('POST Clients', () => {
   it('returns created cognito credentials', async () => {
     const response = await server.inject({
       method: 'POST',
-      url: '/clients/myTenantServiceName',
+      url: '/clients/waste-movement-external-api',
       auth,
       payload: {
         clientName: 'goodName1-_.'
@@ -452,7 +548,7 @@ describe('POST Clients', () => {
 
     const response = await server.inject({
       method: 'POST',
-      url: '/clients/myTenantServiceName',
+      url: '/clients/waste-movement-external-api',
       auth,
       payload: {
         clientName: 'goodName1-_.'
@@ -544,6 +640,9 @@ describe('POST Clients rotate', () => {
     const response = await server.inject({ method: 'POST', url, auth })
 
     expect(response.statusCode).toBe(404)
+    expect(JSON.parse(response.payload).message).toBe(
+      `Client '${clientId}' not found for tenant service '${tenantServiceName}'`
+    )
     expect(rotateCognitoCredential).not.toHaveBeenCalled()
   })
 
@@ -584,7 +683,7 @@ describe('POST Clients rotate', () => {
 
   it('returns a 502 error saying nothing was rotated when CDP refuses', async () => {
     rotateCognitoCredential.mockRejectedValue(
-      new MockRotationError('Refused', { outcomeUnknown: false })
+      new MockCdpError('Refused', { outcomeUnknown: false })
     )
 
     const response = await server.inject({ method: 'POST', url, auth })
@@ -597,7 +696,7 @@ describe('POST Clients rotate', () => {
 
   it('returns a 502 error warning against blind retries when the outcome is unknown', async () => {
     rotateCognitoCredential.mockRejectedValue(
-      new MockRotationError('Timed out', { outcomeUnknown: true })
+      new MockCdpError('Timed out', { outcomeUnknown: true })
     )
 
     const response = await server.inject({ method: 'POST', url, auth })
@@ -738,6 +837,9 @@ describe('DELETE Clients', () => {
     })
 
     expect(response.statusCode).toBe(404)
+    expect(JSON.parse(response.payload).message).toBe(
+      `Client '${clientRecord.clientId}' not found for tenant service '${clientRecord.tenantServiceName}'`
+    )
   })
 
   it('raises an error if searching for the client id fails', async () => {
@@ -791,4 +893,56 @@ describe('DELETE Clients', () => {
       'Deleting client from cache failed with error: Cache delete failed'
     )
   })
+})
+
+describe('Routes for a tenant service', () => {
+  const auth = { strategy: 'basic', credentials: { username: 'test' } }
+  let server
+  let cognitoClient
+  let clientService
+
+  beforeAll(async () => {
+    cognitoClient = await import('#/common/helpers/cognito-client.js')
+    clientService = await import('#/services/clients.js')
+    const { createServer } = await import('#/server.js')
+
+    server = await createServer()
+    await server.initialize()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it.each([
+    ['GET', '/clients/waste-movement-backend'],
+    ['GET', '/clients/waste-movement-backend/my_client_id'],
+    ['POST', '/clients/waste-movement-backend'],
+    ['DELETE', '/clients/waste-movement-backend/my_client_id'],
+    ['POST', '/clients/waste-movement-backend/my_client_id/rotate']
+  ])(
+    'returns a 404 error naming a service it does not manage (%s %s)',
+    async (method, url) => {
+      vi.spyOn(clientService, 'findClient')
+      vi.spyOn(clientService, 'findClients')
+
+      const response = await server.inject({
+        method,
+        url,
+        auth,
+        payload: method === 'POST' ? { clientName: 'goodName1-_.' } : undefined
+      })
+
+      expect(response.statusCode).toBe(404)
+      expect(JSON.parse(response.payload).message).toBe(
+        "Tenant service 'waste-movement-backend' is not managed by dwt-client-sync"
+      )
+      expect(clientService.findClient).not.toHaveBeenCalled()
+      expect(clientService.findClients).not.toHaveBeenCalled()
+      expect(cognitoClient.allCognitoCredentials).not.toHaveBeenCalled()
+      expect(cognitoClient.createCognitoCredential).not.toHaveBeenCalled()
+      expect(cognitoClient.rotateCognitoCredential).not.toHaveBeenCalled()
+      expect(cognitoClient.deleteCognitoCredential).not.toHaveBeenCalled()
+    }
+  )
 })
