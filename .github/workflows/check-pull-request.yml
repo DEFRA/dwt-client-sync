@@ -55,4 +55,4 @@ jobs:
     uses: DEFRA/digital-waste-tracking-uat/.github/workflows/integration-tests.yml@main
     with:
       compose-file: compose.integration.yml
-      test-script: test:uat:client-sync
+      test-script: test:integration:client-sync
