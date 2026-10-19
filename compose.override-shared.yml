@@ -1,0 +1,19 @@
+# dwt-client-sync's changes to the shared stack (see compose.yml)
+
+services:
+  dwt-client-sync:
+    # A local name, so the build doesn't replace your pulled published image
+    image: dwt-client-sync:local
+    # Paths here resolve against the shared file's folder, so use where compose
+    # is run from: this repo's root
+    build:
+      context: ${PWD}
+      target: development
+    volumes:
+      - ${PWD}/src:/home/node/src:Z
+      - ${PWD}/package.json:/home/node/package.json:Z
+    ports:
+      - '9229:9229'
+    environment:
+      NODE_OPTIONS: '--inspect=0.0.0.0:9229'
+      LOG_LEVEL: debug

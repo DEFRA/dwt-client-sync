@@ -1,92 +1,13 @@
-services:
-  # floci is a replacement for localstack. It emulates AWS resources (sqs, sns, s3 etc) for local development
-  # See: https://floci.io for more details
-  floci:
-    image: hectorvent/floci:latest-aws
-    ports:
-      - '4566:4566'
-    env_file:
-      - 'compose/aws.env'
-    environment:
-      FLOCI_DEFAULT_REGION: eu-west-2
-    volumes:
-      - ./compose/floci/start.d:/etc/floci/init/start.d:ro
-    networks:
-      - cdp-tenant
+# The full stack, shared with the other service repos (see shared-compose/README.md
+# in digital-waste-tracking-uat), with dwt-client-sync built from this repo by
+# compose.override-shared.yml.
+#
+# Set SHARED_COMPOSE to a local checkout's shared-compose/compose.yml to try
+# changes to the shared stack. Add a compose.override.yml for your own tweaks.
 
-  redis:
-    image: redis:7.2.3-alpine3.18
-    ports:
-      - '6379:6379'
-    networks:
-      - cdp-tenant
-
-  mongodb:
-    image: mongo:7.0.28
-    networks:
-      - cdp-tenant
-    ports:
-      - '27017:27017'
-    volumes:
-      - ./compose/mongo:/docker-entrypoint-initdb.d:ro
-      - mongodb-data:/data
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.hello().ok"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-
-  mockServer:
-    image: mockserver/mockserver:8.0.0
-    ports:
-      - 1080:1080
-    environment:
-      - MOCKSERVER_MAX_EXPECTATIONS=100
-      - MOCKSERVER_MAX_HEADER_SIZE=8192
-      - MOCKSERVER_INITIALIZATION_JSON_PATH=/config/mockInitializer.json
-    volumes:
-      - ./compose/mockInitializer.json:/config/mockInitializer.json
-    networks:
-      - cdp-tenant
-
-  ################################################################################
-
-  dwt-client-sync:
-    build:
-      context: .
-      target: development
-    ports:
-      - '3001:3001'
-      - "9229:9229"
-    links:
-      - 'floci:floci'
-      - 'mongodb:mongodb'
-    depends_on:
-      floci:
-        condition: service_healthy
-      mongodb:
-        condition: service_started
-    env_file:
-      - 'compose/aws.env'
-    environment:
-      NODE_OPTIONS: "--inspect=0.0.0.0:9229"
-      PORT: 3001
-      NODE_ENV: development
-      MONGO_URI: mongodb://mongodb:27017/
-      CDP_BASE_API_URL: mockServer:1080
-      ACCESS_CRED_WASTE_MOVEMENT_EXTERNAL_API: 'dXNlcj1wYXNzd29yZA=='
-      LOG_LEVEL: debug
-      COGNITO_SERVICE_SYNC_LIST: 'waste-movement-external-api'
-    networks:
-      - cdp-tenant
-
-################################################################################
-
-volumes:
-  mongodb-data:
-
-networks:
-  cdp-tenant:
-    driver: bridge
-    name: cdp-tenant
+include:
+  # The override goes in this list, as older Compose versions (such as v2.38 on
+  # GitHub's runners) reject redefining an included service
+  - path:
+      - ${SHARED_COMPOSE:-https://github.com/DEFRA/digital-waste-tracking-uat.git#main:shared-compose/compose.yml}
+      - compose.override-shared.yml

@@ -193,20 +193,15 @@ docker run -e PORT=3001 -p 3001:3001 dwt-client-sync
 
 ### Docker Compose
 
-A local environment with:
-
-- Floci for AWS services (S3, SQS, SNS etc)
-- Redis
-- MongoDB
-- This service.
-- A commented out frontend example.
+Start the full local environment:
 
 ```bash
 docker compose up --build -d
 ```
 
-Mock AWS resources can be created when Floci starts up by editing the scripts in `./compose/floci/start.d/`.
-MongoDB records can also be created when Mongo starts by editing the scripts in `./compose/mongo/`.
+The stack is defined once in digital-waste-tracking-uat ([shared-compose/](https://github.com/DEFRA/digital-waste-tracking-uat/tree/main/shared-compose)) and shared with the other service repos. `compose.yml` includes it and `compose.override-shared.yml` builds this service from your checkout, with the debugger on port 9229.
+
+The service is available at `http://localhost:3005`. Call it as `waste-movement-external-api` with the password `local-external-api`. A fake of CDP's credentials API stands in for CDP, so creating, rotating and deleting clients work locally: see [The CDP credentials API](https://github.com/DEFRA/digital-waste-tracking-uat/blob/main/shared-compose/README.md#the-cdp-credentials-api).
 
 ### Dependabot
 
