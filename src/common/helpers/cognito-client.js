@@ -40,6 +40,8 @@ class CdpError extends Error {
  * @property {string} clientId
  * @property {string} clientName
  * @property {string} [clientSecret] - Only sent when a client is created or rotated
+ * @property {{ id: string, createdAt: string }[]} [secrets] - The client's
+ * secrets, without their values. Only sent when listing clients
  */
 
 /**
@@ -63,11 +65,18 @@ function toCognitoClients(payload) {
     ({
       client_id: clientId,
       client_name: clientName,
-      client_secret: clientSecret
+      client_secret: clientSecret,
+      client_secrets: secrets
     }) => ({
       clientId,
       clientName,
-      ...(clientSecret !== undefined && { clientSecret })
+      ...(clientSecret !== undefined && { clientSecret }),
+      // The list returns each secret's id and creation date, never its value
+      ...(Array.isArray(secrets) && {
+        secrets: secrets
+          .filter((secret) => secret && typeof secret === 'object')
+          .map(({ id, created_at: createdAt }) => ({ id, createdAt }))
+      })
     })
   )
 }
@@ -120,20 +129,40 @@ const signer = new SignatureV4({
   sha256: Sha256
 })
 
+// CDP returns at most 60 clients a page. When it throttles a request (429),
+// it asks for smaller pages, so each retry halves the page size
+const maxPageSize = 60
+const maxThrottledRetries = 5
+const throttledRetryDelayMs = 250
+
+// A guard against a pagination token that never runs out
+const maxPages = 1000
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const isThrottled = (err) =>
+  err.data?.isResponseError && err.output?.statusCode === 429
+
 /**
+ * Gets one page of the clients in a service's user pool.
  * @param {string} serviceName
- * @returns {Promise<CognitoClient[] | undefined>}
+ * @param {{ pageSize: number, nextToken: string | null }} page
+ * @returns {Promise<object>} CDP's response
  */
-async function allCognitoCredentials(serviceName) {
-  logger.info('Fetching all Cognito credentials')
-
+async function fetchClientsPage(serviceName, { pageSize, nextToken }) {
   const path = listClientsPath.replace('{service-name}', serviceName)
+  const query = {
+    page_size: String(pageSize),
+    ...(nextToken && { next_token: nextToken })
+  }
 
+  // The query string is signed, so the URL must send it exactly as signed
   const requestToSign = new HttpRequest({
     method: 'GET',
     protocol,
     hostname: baseUrl,
     path,
+    query,
     headers: {
       host: baseUrl
     }
@@ -141,27 +170,84 @@ async function allCognitoCredentials(serviceName) {
 
   const signed = await signer.sign(requestToSign)
 
-  logger.info(`${protocol}://${baseUrl}${path}`)
+  const queryString = Object.entries(query)
+    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+    .join('&')
+  const uri = `${protocol}://${baseUrl}${path}?${queryString}`
 
-  const { res, payload } = await Wreck.get(`${protocol}://${baseUrl}${path}`, {
+  logger.info(`${protocol}://${baseUrl}${path} (page size ${pageSize})`)
+
+  const { res, payload } = await Wreck.get(uri, {
     headers: signed.headers,
     json: true
   })
 
   if (res.statusCode !== 200) {
-    logger.error(
-      `Failed to fetch Cognito credentials. Status code: ${res.statusCode}`
-    )
     throw new Error(
       `Failed to fetch Cognito credentials. Status code: ${res.statusCode}`
     )
   }
 
-  logger.info(
-    'Successfully fetched all Cognito credentials from the backend service.'
-  )
+  return payload
+}
 
-  return toCognitoClients(payload)
+/**
+ * Gets every client in a service's user pool, page by page.
+ *
+ * Sync treats a client missing from the list as deleted, so this never
+ * returns part of the list: it throws if a page fails, and returns undefined
+ * if a page can't be read.
+ *
+ * @param {string} serviceName
+ * @returns {Promise<CognitoClient[] | undefined>}
+ */
+async function allCognitoCredentials(serviceName) {
+  logger.info('Fetching all Cognito credentials')
+
+  const clients = []
+  let pageSize = maxPageSize
+  let nextToken = null
+  let throttledRetries = 0
+
+  for (let pages = 0; pages < maxPages;) {
+    let payload
+    try {
+      payload = await fetchClientsPage(serviceName, { pageSize, nextToken })
+    } catch (err) {
+      if (isThrottled(err) && throttledRetries < maxThrottledRetries) {
+        throttledRetries++
+        pageSize = Math.max(1, Math.floor(pageSize / 2))
+        logger.warn(
+          `Cognito credentials request throttled, retrying with page size ${pageSize}`
+        )
+        await wait(throttledRetryDelayMs * 2 ** throttledRetries)
+        continue
+      }
+
+      logger.error(`Failed to fetch Cognito credentials: ${err.message}`)
+      throw err
+    }
+
+    const page = toCognitoClients(payload)
+    if (!page) {
+      return undefined
+    }
+
+    clients.push(...page)
+    pages++
+    nextToken = payload.next_token ?? null
+
+    if (!nextToken) {
+      logger.info(
+        `Successfully fetched all ${clients.length} Cognito credentials in ${pages} page(s)`
+      )
+      return clients
+    }
+  }
+
+  throw new Error(
+    `Failed to fetch Cognito credentials: more than ${maxPages} pages`
+  )
 }
 
 /**
