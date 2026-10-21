@@ -142,6 +142,7 @@ const maxPages = 1000
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
+// Wreck throws a Boom error for a 4xx or 5xx response, marked isResponseError
 const isThrottled = (err) =>
   err.data?.isResponseError && err.output?.statusCode === 429
 
@@ -194,6 +195,51 @@ async function fetchClientsPage(serviceName, { pageSize, nextToken }) {
 }
 
 /**
+ * Gets one page, retrying with smaller pages while CDP throttles the request.
+ * @param {string} serviceName
+ * @param {{ pageSize: number, nextToken: string | null }} page
+ * @param {number} retriesLeft - The retries left for the whole listing
+ * @param {number} [attempt] - How many times this page has been retried
+ * @returns {Promise<{ payload: object, pageSize: number, retriesLeft: number }>}
+ * CDP's response, the page size that got it, and the retries still left
+ */
+async function fetchClientsPageWithRetries(
+  serviceName,
+  { pageSize, nextToken },
+  retriesLeft,
+  attempt = 0
+) {
+  try {
+    const payload = await fetchClientsPage(serviceName, { pageSize, nextToken })
+    return { payload, pageSize, retriesLeft }
+  } catch (err) {
+    const canRetry =
+      isThrottled(err) &&
+      attempt < maxThrottledRetriesPerPage &&
+      retriesLeft > 0
+
+    if (!canRetry) {
+      logger.error(`Failed to fetch Cognito credentials: ${err.message}`)
+      throw err
+    }
+
+    await wait(throttledRetryDelayMs * 2 ** attempt)
+
+    const smallerPageSize = Math.max(1, Math.floor(pageSize / 2))
+    logger.warn(
+      `Cognito credentials request throttled, retrying with page size ${smallerPageSize}`
+    )
+
+    return fetchClientsPageWithRetries(
+      serviceName,
+      { pageSize: smallerPageSize, nextToken },
+      retriesLeft - 1,
+      attempt + 1
+    )
+  }
+}
+
+/**
  * Gets every client in a service's user pool, page by page.
  *
  * Sync treats a client missing from the list as deleted, so this never
@@ -208,35 +254,25 @@ async function allCognitoCredentials(serviceName) {
 
   const clients = []
   const seenTokens = new Set()
+  let retriesLeft = maxThrottledRetries
   let pageSize = maxPageSize
   let nextToken = null
   let pages = 0
-  let pageRetries = 0
-  let totalRetries = 0
 
-  for (;;) {
-    let payload
-    try {
-      payload = await fetchClientsPage(serviceName, { pageSize, nextToken })
-    } catch (err) {
-      if (
-        isThrottled(err) &&
-        pageRetries < maxThrottledRetriesPerPage &&
-        totalRetries < maxThrottledRetries
-      ) {
-        await wait(throttledRetryDelayMs * 2 ** pageRetries)
-        pageRetries++
-        totalRetries++
-        pageSize = Math.max(1, Math.floor(pageSize / 2))
-        logger.warn(
-          `Cognito credentials request throttled, retrying with page size ${pageSize}`
-        )
-        continue
-      }
-
-      logger.error(`Failed to fetch Cognito credentials: ${err.message}`)
-      throw err
+  do {
+    if (pages >= maxPages) {
+      throw new Error(
+        `Failed to fetch Cognito credentials: more than ${maxPages} pages`
+      )
     }
+
+    const result = await fetchClientsPageWithRetries(
+      serviceName,
+      { pageSize, nextToken },
+      retriesLeft
+    )
+    const { payload, pageSize: pageSizeUsed } = result
+    retriesLeft = result.retriesLeft
 
     const page = toCognitoClients(payload)
     if (!page) {
@@ -245,37 +281,32 @@ async function allCognitoCredentials(serviceName) {
 
     // CDP always sends next_token, so a full page without it may be only part
     // of the list. A shorter one is the whole list, as before pagination
-    if (!('next_token' in payload) && page.length === pageSize) {
+    if (!('next_token' in payload) && page.length === pageSizeUsed) {
       logger.error('Cognito credentials page is full but has no next_token')
       return undefined
     }
 
     clients.push(...page)
     pages++
-    pageRetries = 0
-    pageSize = Math.min(maxPageSize, pageSize * 2)
-    nextToken = payload.next_token ?? null
 
-    if (!nextToken) {
-      logger.info(
-        `Successfully fetched all ${clients.length} Cognito credentials in ${pages} page(s)`
-      )
-      return clients
-    }
+    // Back towards full pages once CDP stops throttling
+    pageSize = Math.min(maxPageSize, pageSizeUsed * 2)
+    nextToken = payload.next_token ?? null
 
     if (seenTokens.has(nextToken)) {
       throw new Error(
         'Failed to fetch Cognito credentials: CDP repeated a pagination token'
       )
     }
-    seenTokens.add(nextToken)
-
-    if (pages >= maxPages) {
-      throw new Error(
-        `Failed to fetch Cognito credentials: more than ${maxPages} pages`
-      )
+    if (nextToken) {
+      seenTokens.add(nextToken)
     }
-  }
+  } while (nextToken)
+
+  logger.info(
+    `Successfully fetched all ${clients.length} Cognito credentials in ${pages} page(s)`
+  )
+  return clients
 }
 
 /**
