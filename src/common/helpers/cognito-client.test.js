@@ -194,7 +194,9 @@ describe('allCognitoCredentials', () => {
       expect(mockGet).toHaveBeenCalledTimes(1)
       await vi.advanceTimersByTimeAsync(1)
       expect(mockGet).toHaveBeenCalledTimes(2)
-      await vi.advanceTimersByTimeAsync(500)
+      await vi.advanceTimersByTimeAsync(499)
+      expect(mockGet).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(1)
       expect(mockGet).toHaveBeenCalledTimes(3)
       await result
     })
