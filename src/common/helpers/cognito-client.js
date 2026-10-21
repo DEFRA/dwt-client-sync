@@ -130,12 +130,14 @@ const signer = new SignatureV4({
 })
 
 // CDP returns at most 60 clients a page. When it throttles a request (429),
-// it asks for smaller pages, so each retry halves the page size
+// it asks for smaller pages, so each retry halves the page size. Retries are
+// counted per page, with a cap for the whole listing
 const maxPageSize = 60
-const maxThrottledRetries = 5
+const maxThrottledRetriesPerPage = 5
+const maxThrottledRetries = 20
 const throttledRetryDelayMs = 250
 
-// A guard against a pagination token that never runs out
+// A guard against pagination that never ends
 const maxPages = 1000
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -205,22 +207,30 @@ async function allCognitoCredentials(serviceName) {
   logger.info('Fetching all Cognito credentials')
 
   const clients = []
+  const seenTokens = new Set()
   let pageSize = maxPageSize
   let nextToken = null
-  let throttledRetries = 0
+  let pages = 0
+  let pageRetries = 0
+  let totalRetries = 0
 
-  for (let pages = 0; pages < maxPages;) {
+  for (;;) {
     let payload
     try {
       payload = await fetchClientsPage(serviceName, { pageSize, nextToken })
     } catch (err) {
-      if (isThrottled(err) && throttledRetries < maxThrottledRetries) {
-        throttledRetries++
+      if (
+        isThrottled(err) &&
+        pageRetries < maxThrottledRetriesPerPage &&
+        totalRetries < maxThrottledRetries
+      ) {
+        await wait(throttledRetryDelayMs * 2 ** pageRetries)
+        pageRetries++
+        totalRetries++
         pageSize = Math.max(1, Math.floor(pageSize / 2))
         logger.warn(
           `Cognito credentials request throttled, retrying with page size ${pageSize}`
         )
-        await wait(throttledRetryDelayMs * 2 ** throttledRetries)
         continue
       }
 
@@ -233,8 +243,17 @@ async function allCognitoCredentials(serviceName) {
       return undefined
     }
 
+    // CDP always sends next_token, so a full page without it may be only part
+    // of the list. A shorter one is the whole list, as before pagination
+    if (!('next_token' in payload) && page.length === pageSize) {
+      logger.error('Cognito credentials page is full but has no next_token')
+      return undefined
+    }
+
     clients.push(...page)
     pages++
+    pageRetries = 0
+    pageSize = Math.min(maxPageSize, pageSize * 2)
     nextToken = payload.next_token ?? null
 
     if (!nextToken) {
@@ -243,11 +262,20 @@ async function allCognitoCredentials(serviceName) {
       )
       return clients
     }
-  }
 
-  throw new Error(
-    `Failed to fetch Cognito credentials: more than ${maxPages} pages`
-  )
+    if (seenTokens.has(nextToken)) {
+      throw new Error(
+        'Failed to fetch Cognito credentials: CDP repeated a pagination token'
+      )
+    }
+    seenTokens.add(nextToken)
+
+    if (pages >= maxPages) {
+      throw new Error(
+        `Failed to fetch Cognito credentials: more than ${maxPages} pages`
+      )
+    }
+  }
 }
 
 /**

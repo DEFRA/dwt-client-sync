@@ -182,6 +182,81 @@ describe('allCognitoCredentials', () => {
       )
     })
 
+    it('waits 250ms before the first retry, then twice as long each time', async () => {
+      mockGet
+        .mockRejectedValueOnce(throttled())
+        .mockRejectedValueOnce(throttled())
+        .mockResolvedValueOnce(page(['a']))
+
+      const result = allCognitoCredentials('my-service')
+
+      await vi.advanceTimersByTimeAsync(249)
+      expect(mockGet).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(mockGet).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(500)
+      expect(mockGet).toHaveBeenCalledTimes(3)
+      await result
+    })
+
+    it('goes back to bigger pages after a page succeeds', async () => {
+      mockGet
+        .mockRejectedValueOnce(throttled())
+        .mockResolvedValueOnce(page(['a'], 'token1'))
+        .mockResolvedValueOnce(page(['b'], 'token2'))
+        .mockResolvedValueOnce(page(['c']))
+
+      const result = allCognitoCredentials('my-service')
+      await vi.runAllTimersAsync()
+      await result
+
+      expect(
+        mockGet.mock.calls.map(([url]) => url.match(/page_size=(\d+)/)[1])
+      ).toEqual(['60', '30', '60', '60'])
+    })
+
+    it('counts retries for each page, so throttling spread over pages still succeeds', async () => {
+      // Two 429s before each of four pages: eight in all
+      for (const [names, token] of [
+        [['a'], 't1'],
+        [['b'], 't2'],
+        [['c'], 't3'],
+        [['d'], null]
+      ]) {
+        mockGet
+          .mockRejectedValueOnce(throttled())
+          .mockRejectedValueOnce(throttled())
+          .mockResolvedValueOnce(page(names, token))
+      }
+
+      const result = allCognitoCredentials('my-service')
+      await vi.runAllTimersAsync()
+
+      expect((await result).map(({ clientName }) => clientName)).toEqual([
+        'a',
+        'b',
+        'c',
+        'd'
+      ])
+    })
+
+    it('gives up after 20 retries across the whole list', async () => {
+      let pageNumber = 0
+      mockGet.mockImplementation(async () => {
+        pageNumber++
+        if (pageNumber % 2 === 1) {
+          throw throttled()
+        }
+        return page(['a'], `token-${pageNumber}`)
+      })
+
+      const result = allCognitoCredentials('my-service').catch((err) => err)
+      await vi.runAllTimersAsync()
+
+      expect((await result).message).toBe('Response Error: 429')
+      expect(mockGet).toHaveBeenCalledTimes(41)
+    })
+
     it('gives up after five retries', async () => {
       mockGet.mockRejectedValue(throttled())
 
@@ -194,11 +269,64 @@ describe('allCognitoCredentials', () => {
   })
 
   it('gives up if the pages never run out', async () => {
-    mockGet.mockResolvedValue(page(['a'], 'same-token'))
+    let pageNumber = 0
+    mockGet.mockImplementation(async () => page(['a'], `token-${++pageNumber}`))
 
     await expect(allCognitoCredentials('my-service')).rejects.toThrow(
       'Failed to fetch Cognito credentials: more than 1000 pages'
     )
+    expect(mockGet).toHaveBeenCalledTimes(1000)
+  })
+
+  it('gives up as soon as CDP repeats a token', async () => {
+    mockGet.mockResolvedValue(page(['a'], 'same-token'))
+
+    await expect(allCognitoCredentials('my-service')).rejects.toThrow(
+      'Failed to fetch Cognito credentials: CDP repeated a pagination token'
+    )
+    expect(mockGet).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns undefined for a full page without a next_token field, which may be part of the list', async () => {
+    const fullPage = page(Array.from({ length: 60 }, (_, i) => `client${i}`))
+    delete fullPage.payload.next_token
+    mockGet.mockResolvedValue(fullPage)
+
+    expect(await allCognitoCredentials('my-service')).toBeUndefined()
+  })
+
+  it('accepts a shorter page without a next_token field as the whole list, as before pagination', async () => {
+    const shortPage = page(['a', 'b'])
+    delete shortPage.payload.next_token
+    mockGet.mockResolvedValue(shortPage)
+
+    expect(await allCognitoCredentials('my-service')).toHaveLength(2)
+  })
+
+  it('returns undefined when a later page has a client that is not an object', async () => {
+    mockGet.mockResolvedValueOnce(page(['a'], 'token1')).mockResolvedValueOnce({
+      res: { statusCode: 200 },
+      payload: { client_details: [null], next_token: null }
+    })
+
+    expect(await allCognitoCredentials('my-service')).toBeUndefined()
+  })
+
+  it.each([
+    ['refuses the request', 403],
+    ['has a server error', 500]
+  ])('does not retry when CDP %s', async (_, statusCode) => {
+    mockGet.mockRejectedValue(
+      new Boom.Boom(`Response Error: ${statusCode}`, {
+        statusCode,
+        data: { isResponseError: true }
+      })
+    )
+
+    await expect(allCognitoCredentials('my-service')).rejects.toThrow(
+      `Response Error: ${statusCode}`
+    )
+    expect(mockGet).toHaveBeenCalledTimes(1)
   })
 
   it("maps each client's secrets, without their values", async () => {
