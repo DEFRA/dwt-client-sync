@@ -129,8 +129,8 @@ const signer = new SignatureV4({
   sha256: Sha256
 })
 
-// CDP returns at most 60 clients a page. When it throttles a request (429),
-// it asks for smaller pages, so each retry halves the page size. Retries are
+// CDP returns at most 60 clients a page. Its docs say to retry a throttled
+// request (429) with a smaller page size, so each retry halves it. Retries are
 // counted per page, with a cap for the whole listing
 const maxPageSize = 60
 const maxThrottledRetriesPerPage = 5
@@ -159,7 +159,8 @@ async function fetchClientsPage(serviceName, { pageSize, nextToken }) {
     ...(nextToken && { next_token: nextToken })
   }
 
-  // The query string is signed, so the URL must send it exactly as signed
+  // The query string is part of the signature, so the URL must send the same
+  // values that were signed
   const requestToSign = new HttpRequest({
     method: 'GET',
     protocol,
@@ -242,9 +243,9 @@ async function fetchClientsPageWithRetries(
 /**
  * Gets every client in a service's user pool, page by page.
  *
- * Sync treats a client missing from the list as deleted, so this never
- * returns part of the list: it throws if a page fails, and returns undefined
- * if a page can't be read.
+ * Sync treats a client missing from the list as deleted, so this guards
+ * against returning part of the list: it throws if a page fails, and returns
+ * undefined if a page can't be read or looks cut short.
  *
  * @param {string} serviceName
  * @returns {Promise<CognitoClient[] | undefined>}
@@ -280,7 +281,8 @@ async function allCognitoCredentials(serviceName) {
     }
 
     // CDP always sends next_token, so a full page without it may be only part
-    // of the list. A shorter one is the whole list, as before pagination
+    // of the list. A shorter one is taken as the whole list, as CDP returned
+    // before it paginated
     if (!('next_token' in payload) && page.length === pageSizeUsed) {
       logger.error('Cognito credentials page is full but has no next_token')
       return undefined
