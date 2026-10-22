@@ -6,6 +6,8 @@ import { createLogger } from '#/common/helpers/logging/logger.js'
 import { managedServices } from '#/common/helpers/managed-services.js'
 import { sync } from '#/services/client-sync.js'
 import { deleteClient } from '#/services/client-delete.js'
+import { purgeOldSecret } from '#/services/client-purge.js'
+import { PurgeOutcome } from '#/domain/client-secrets.js'
 import {
   toClientResponse,
   toClientCredentialsResponse
@@ -31,8 +33,13 @@ const OUTCOME_UNKNOWN_MESSAGE =
 const CREATE_OUTCOME_UNKNOWN_MESSAGE =
   "Create outcome unknown: the client may have been created, but its secret couldn't be returned. Check the client, and rotate its secret if it exists."
 
+// Purging is idempotent, and the newest secret is always kept, so a retry
+// can't leave the client without a secret
+const PURGE_OUTCOME_UNKNOWN_MESSAGE =
+  'Purge outcome unknown: the older secret may have been removed. It is safe to try again: if the client then has only one secret, the purge worked.'
+
 // CDP service names are lowercase kebab-case; Cognito client ids match [\w+]+
-const rotateParamsSchema = Joi.object({
+const clientParamsSchema = Joi.object({
   tenantServiceName: Joi.string()
     .pattern(/^[a-z0-9-]+$/)
     .required(),
@@ -62,6 +69,48 @@ function clientNotFound(tenantServiceName, clientId) {
   return Boom.notFound(
     `Client '${clientId}' not found for tenant service '${tenantServiceName}'`
   )
+}
+
+/**
+ * @param {string} outcome - A PurgeOutcome other than PURGED
+ * @param {{ clientId: string, clientName: string }} client
+ * @returns {Boom.Boom} The error for the outcome
+ */
+function purgeError(outcome, { clientId, clientName }) {
+  switch (outcome) {
+    case PurgeOutcome.NOT_IN_CDP:
+      return Boom.notFound(`Client '${clientId}' not found in CDP`)
+    case PurgeOutcome.NAME_OUT_OF_DATE:
+      return Boom.conflict(
+        "The stored client is out of date: its name doesn't match CDP"
+      )
+    case PurgeOutcome.NAME_REUSED:
+      return Boom.conflict(
+        'The stored client is out of date: its name belongs to a different client'
+      )
+    case PurgeOutcome.NAME_SHARED:
+      return Boom.conflict(
+        `Another client is named '${clientName}' (case insensitive), and CDP removes secrets by name, so no secret was removed`
+      )
+    case PurgeOutcome.ONE_SECRET:
+      return Boom.conflict(
+        `Client '${clientId}' has only one secret, so there is none to remove`
+      )
+    case PurgeOutcome.SAME_TIME:
+      return Boom.conflict(
+        `Client '${clientId}' has two secrets created at the same time, so neither is older to remove`
+      )
+    case PurgeOutcome.LIST_UNREADABLE:
+    case PurgeOutcome.NO_SECRETS:
+    case PurgeOutcome.DATE_UNREADABLE:
+      return Boom.badGateway(
+        "Couldn't read the client's secrets from CDP, so no secret was removed"
+      )
+    case PurgeOutcome.OUTCOME_UNKNOWN:
+      return Boom.badGateway(PURGE_OUTCOME_UNKNOWN_MESSAGE)
+    default:
+      throw new Error(`Unknown purge outcome: ${outcome}`)
+  }
 }
 
 // CDP doesn't validate service names, so an unknown one fails there with an
@@ -296,7 +345,7 @@ export const clients = [
     path: '/clients/{tenantServiceName}/{clientId}/rotate',
     options: {
       validate: {
-        params: rotateParamsSchema
+        params: clientParamsSchema
       },
       pre: [checkTenantService],
       // Responses can hold a client secret
@@ -379,6 +428,56 @@ export const clients = [
           return err.outcomeUnknown
             ? Boom.badGateway(OUTCOME_UNKNOWN_MESSAGE)
             : Boom.badGateway('CDP refused the rotation request')
+        }
+
+        return Boom.internal()
+      }
+    }
+  },
+  {
+    method: 'POST',
+    path: '/clients/{tenantServiceName}/{clientId}/purge',
+    options: {
+      validate: {
+        params: clientParamsSchema
+      },
+      pre: [checkTenantService]
+    },
+    handler: async (request, h) => {
+      try {
+        const {
+          db,
+          auth,
+          params: { tenantServiceName, clientId }
+        } = request
+
+        logger.info(
+          `Old client secret purge requested by ${auth.credentials.username} for client ${clientId} of ${tenantServiceName}`
+        )
+
+        // Only stored clients are managed here
+        const client = await findClient(tenantServiceName, clientId, db)
+
+        if (!client) {
+          return clientNotFound(tenantServiceName, clientId)
+        }
+
+        const outcome = await purgeOldSecret(tenantServiceName, client)
+
+        if (outcome !== PurgeOutcome.PURGED) {
+          return purgeError(outcome, client)
+        }
+
+        return h.response().code(204)
+      } catch (err) {
+        logger.error(err.message)
+
+        if (err instanceof CdpError) {
+          return err.outcomeUnknown
+            ? Boom.badGateway(PURGE_OUTCOME_UNKNOWN_MESSAGE)
+            : Boom.badGateway(
+                'CDP refused the purge request, so no secret was removed'
+              )
         }
 
         return Boom.internal()

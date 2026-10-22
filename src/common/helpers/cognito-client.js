@@ -14,14 +14,20 @@ const {
   listClientsPath,
   createClientsPath,
   rotateClientsPath,
+  purgeClientsPath,
   deleteClientsPath,
-  rotateTimeoutMs,
-  createTimeoutMs,
   protocol
 } = config.get('cognito')
 
+// CDP's docs say to allow up to 120 seconds for a response, so this only ends
+// a call that will never get one, such as on a connection that dies silently.
+// Sync holds its lock while it lists, so a hung list would stop every later
+// sync. Wreck applies it to getting the response and to reading its body
+// separately, so a call can take up to about 240 seconds
+const requestTimeoutMs = 120_000
+
 /**
- * A failed create or rotate request. `outcomeUnknown` is true when CDP may
+ * A failed create, rotate or purge request. `outcomeUnknown` is true when CDP may
  * still have made the change (timeout, network error, 5xx or unreadable
  * response), and false when CDP refused the request (4xx), so nothing changed.
  */
@@ -183,7 +189,8 @@ async function fetchClientsPage(serviceName, { pageSize, nextToken }) {
 
   const { res, payload } = await Wreck.get(uri, {
     headers: signed.headers,
-    json: true
+    json: true,
+    timeout: requestTimeoutMs
   })
 
   if (res.statusCode !== 200) {
@@ -342,7 +349,7 @@ async function createCognitoCredential(serviceName, newClientName) {
   logger.info(uri)
 
   const payload = await postToCdp('create', uri, signed, {
-    timeout: createTimeoutMs
+    timeout: requestTimeoutMs
   })
 
   logger.info(
@@ -388,10 +395,58 @@ async function rotateCognitoCredential(serviceName, clientName) {
   logger.info(uri)
 
   const payload = await postToCdp('rotate', uri, signed, {
-    timeout: rotateTimeoutMs
+    timeout: requestTimeoutMs
   })
 
   logger.info('Successfully rotated Cognito credentials')
+
+  return toCognitoClients(payload)
+}
+
+/**
+ * Removes a client's older secrets, keeping its newest. CDP purges by name,
+ * so it acts on every client with that name.
+ * @param {string} serviceName
+ * @param {string} clientName
+ * @param {string} creationCutoff - Only secrets created before this ISO 8601
+ * date-time are removed
+ * @returns {Promise<CognitoClient[] | undefined>} Every client CDP processed,
+ * without secrets
+ */
+async function purgeCognitoCredential(serviceName, clientName, creationCutoff) {
+  logger.info('Purging old Cognito credentials')
+
+  const path = purgeClientsPath.replace(
+    '{service-name}',
+    encodeURIComponent(serviceName)
+  )
+
+  const requestToSign = new HttpRequest({
+    method: 'POST',
+    protocol,
+    hostname: baseUrl,
+    path,
+    headers: {
+      host: baseUrl,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      client_names: [clientName],
+      creation_cutoff: creationCutoff
+    })
+  })
+
+  const signed = await signer.sign(requestToSign)
+
+  const uri = `${protocol}://${baseUrl}${path}`
+
+  logger.info(uri)
+
+  const payload = await postToCdp('purge', uri, signed, {
+    timeout: requestTimeoutMs
+  })
+
+  logger.info('Successfully purged old Cognito credentials')
 
   return toCognitoClients(payload)
 }
@@ -427,7 +482,8 @@ async function deleteCognitoCredential(serviceName, clientName) {
   const { res, payload } = await Wreck.post(uri, {
     headers: signed.headers,
     json: true,
-    payload: signed.body
+    payload: signed.body,
+    timeout: requestTimeoutMs
   })
 
   // A deletion returns no clients
@@ -450,6 +506,7 @@ export {
   allCognitoCredentials,
   createCognitoCredential,
   rotateCognitoCredential,
+  purgeCognitoCredential,
   deleteCognitoCredential,
   CdpError
 }
