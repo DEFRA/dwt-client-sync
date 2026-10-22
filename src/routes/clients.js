@@ -34,7 +34,7 @@ const OUTCOME_UNKNOWN_MESSAGE =
 const CREATE_OUTCOME_UNKNOWN_MESSAGE =
   "Create outcome unknown: the client may have been created, but its secret couldn't be returned. It can't be found or rotated here until the next sync (or POST /clients/sync). If it exists then, rotate its secret."
 
-// The client is saved before this is returned, so it can be rotated now
+// Returned after the client is saved, so the caller can rotate it straight away
 const CREATE_NO_SECRET_MESSAGE =
   "The client was created, but CDP didn't return its secret. Rotate its secret to get one."
 

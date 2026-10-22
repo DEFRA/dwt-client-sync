@@ -53,12 +53,15 @@ export async function saveClient(db, record) {
 }
 
 /**
- * Reads the stored clients for a sync, which must happen before it lists the
- * clients from CDP. A record read here was saved after its client was created
- * in CDP, so the list includes it (assuming CDP lists a client as soon as it's
- * created) unless it has since been deleted there, and sync doesn't delete a
- * record saved after this read. A client created and then deleted while a
- * sync runs can be stored again until the next sync.
+ * Reads the stored clients for a sync. Sync must call this before it lists
+ * the clients from CDP:
+ * - Every record read here was saved after its client was created in CDP, so
+ *   the list includes it unless the client has since been deleted. This
+ *   assumes CDP lists a client as soon as it's created.
+ * - A record saved after this read isn't in it, so sync can't delete it.
+ *
+ * A client created and then deleted while a sync is running can be stored
+ * again until the next sync.
  *
  * @param {Logger} logger - The logger
  * @param {MongoDb} db - The db

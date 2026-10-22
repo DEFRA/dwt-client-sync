@@ -33,8 +33,8 @@ async function sync(db, locker) {
       for (const service of services) {
         logger.info(`Syncing service ${service}...`)
 
-        // Read before listing, so a client saved by create meanwhile isn't
-        // deleted (see readStoredClients)
+        // Read before listing CDP, so this sync can't delete a client that
+        // create saves while it's running (see readStoredClients)
         const storedClients = await readStoredClients(logger, db, service)
         const cognitoClients = await allCognitoCredentials(service)
 

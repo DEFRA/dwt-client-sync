@@ -61,8 +61,8 @@ describe('Software Provider sync', () => {
     mockReadStoredClients.mockResolvedValue(storedClients)
   })
 
-  // Otherwise a client created after the list, and saved before the read,
-  // looks deleted from CDP
+  // If sync listed first, a client created after the list and saved before
+  // the read would look deleted from CDP
   it('reads the stored clients before listing CDP, and stores against them', async () => {
     mockAllCognitoCredentials.mockResolvedValue([])
     const db = {}
