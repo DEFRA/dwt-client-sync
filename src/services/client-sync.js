@@ -1,7 +1,7 @@
 import { allCognitoCredentials } from '#/common/helpers/cognito-client.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { acquireLock, releaseLock } from '#/common/helpers/mongo-lock.js'
-import { store } from '#/services/clients.js'
+import { readStoredClients, store } from '#/services/clients.js'
 import { toClientRecord } from '#/models/client-mapper.js'
 import { managedServices } from '#/common/helpers/managed-services.js'
 
@@ -33,6 +33,9 @@ async function sync(db, locker) {
       for (const service of services) {
         logger.info(`Syncing service ${service}...`)
 
+        // Read before listing CDP, so this sync can't delete a client that
+        // create saves while it's running (see readStoredClients)
+        const storedClients = await readStoredClients(logger, db, service)
         const cognitoClients = await allCognitoCredentials(service)
 
         if (!cognitoClients) {
@@ -51,7 +54,7 @@ async function sync(db, locker) {
           `Storing ${softwareProviders.length} software providers in the database`
         )
 
-        await store(logger, db, softwareProviders, service)
+        await store(logger, db, softwareProviders, service, storedClients)
 
         result.services.push({
           serviceName: service,
