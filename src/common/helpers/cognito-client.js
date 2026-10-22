@@ -405,7 +405,8 @@ async function rotateCognitoCredential(serviceName, clientName) {
  * @param {string} clientName
  * @param {string} creationCutoff - Only secrets created before this ISO 8601
  * date-time are removed
- * @returns {Promise<CognitoClient[] | undefined>} Every client purged, without secrets
+ * @returns {Promise<CognitoClient[] | undefined>} Every client CDP processed,
+ * without secrets
  */
 async function purgeCognitoCredential(serviceName, clientName, creationCutoff) {
   logger.info('Purging old Cognito credentials')

@@ -38,10 +38,10 @@ const SECRETS_UNREADABLE_MESSAGE =
 // Purging is idempotent, and the newest secret is always kept, so a retry
 // can't leave the client without a secret
 const PURGE_OUTCOME_UNKNOWN_MESSAGE =
-  'Purge outcome unknown: the older secret may have been removed. It is safe to try again.'
+  'Purge outcome unknown: the older secret may have been removed. It is safe to try again: if the client then has only one secret, the purge worked.'
 
 // CDP service names are lowercase kebab-case; Cognito client ids match [\w+]+
-const rotateParamsSchema = Joi.object({
+const clientParamsSchema = Joi.object({
   tenantServiceName: Joi.string()
     .pattern(/^[a-z0-9-]+$/)
     .required(),
@@ -53,24 +53,43 @@ const rotateParamsSchema = Joi.object({
 const logger = createLogger()
 
 /**
+ * The microseconds after the millisecond in an ISO 8601 date-time, which
+ * Date.parse drops. CDP's dates have six decimal places.
+ * @param {string} dateTime
+ * @returns {number}
+ */
+function microseconds(dateTime) {
+  const digits = /\.\d{3}(\d{1,3})/.exec(dateTime)?.[1] ?? ''
+  return Number(digits.padEnd(3, '0'))
+}
+
+/**
  * Finds a client's newest secret, by when it was created.
  * @param {{ id: string, createdAt: string }[]} secrets
  * @returns {{ id: string, createdAt: string } | undefined} undefined when a
- * creation date can't be read
+ * creation date can't be read, or two secrets were created at the same time
  */
 function newestSecret(secrets) {
   const dated = secrets.map((secret) => ({
     secret,
-    time: Date.parse(secret.createdAt)
+    time: Date.parse(secret.createdAt),
+    microseconds: microseconds(secret.createdAt)
   }))
 
   if (dated.some(({ time }) => Number.isNaN(time))) {
     return undefined
   }
 
-  return dated.reduce((newest, next) =>
-    next.time > newest.time ? next : newest
-  ).secret
+  const byAge = (a, b) => a.time - b.time || a.microseconds - b.microseconds
+  const [newest, nextNewest] = dated.sort((a, b) => byAge(b, a))
+
+  // Neither of two newest secrets is before the cutoff, so CDP would
+  // remove nothing
+  if (nextNewest && byAge(newest, nextNewest) === 0) {
+    return undefined
+  }
+
+  return newest.secret
 }
 
 /**
@@ -326,7 +345,7 @@ export const clients = [
     path: '/clients/{tenantServiceName}/{clientId}/rotate',
     options: {
       validate: {
-        params: rotateParamsSchema
+        params: clientParamsSchema
       },
       pre: [checkTenantService],
       // Responses can hold a client secret
@@ -420,12 +439,9 @@ export const clients = [
     path: '/clients/{tenantServiceName}/{clientId}/purge',
     options: {
       validate: {
-        params: rotateParamsSchema
+        params: clientParamsSchema
       },
-      pre: [checkTenantService],
-      cache: {
-        otherwise: 'no-store'
-      }
+      pre: [checkTenantService]
     },
     handler: async (request, h) => {
       try {
@@ -439,7 +455,7 @@ export const clients = [
           `Old client secret purge requested by ${auth.credentials.username} for client ${clientId} of ${tenantServiceName}`
         )
 
-        // Cognito purges by client name, which the stored client gives us
+        // Only stored clients are managed here
         const client = await findClient(tenantServiceName, clientId, db)
 
         if (!client) {
@@ -476,10 +492,13 @@ export const clients = [
         }
 
         // Names aren't unique in Cognito, and CDP purges every client with
-        // the name, so a purge would also remove the other clients' secrets
+        // the name, so a purge would also remove the other clients' secrets.
+        // CDP's docs don't say whether names match case insensitively, so
+        // assume they do
+        const name = client.clientName.toLowerCase()
         const sharesName = cognitoClients.some(
           (listed) =>
-            listed.clientName === client.clientName &&
+            listed.clientName?.toLowerCase() === name &&
             listed.clientId !== clientId
         )
 
@@ -488,19 +507,21 @@ export const clients = [
             `Not purging client ${clientId}: another client has the same name`
           )
           return Boom.conflict(
-            `Another client is named '${client.clientName}', and CDP removes secrets by name, so no secret was removed`
+            `Another client is named '${client.clientName}' (case insensitive), and CDP removes secrets by name, so no secret was removed`
           )
         }
 
         const { secrets } = cognitoClient
 
-        if (!Array.isArray(secrets)) {
+        // CDP never removes a client's newest secret, so none means the list
+        // can't be trusted
+        if (!Array.isArray(secrets) || secrets.length === 0) {
           logger.error(`CDP's list has no secrets for client ${clientId}`)
           return Boom.badGateway(SECRETS_UNREADABLE_MESSAGE)
         }
 
         // A client must always keep a secret
-        if (secrets.length < 2) {
+        if (secrets.length === 1) {
           return Boom.conflict(
             `Client '${clientId}' has only one secret, so there is none to remove`
           )
@@ -510,13 +531,16 @@ export const clients = [
 
         if (!newest) {
           logger.error(
-            `CDP's list has a secret for client ${clientId} with an unreadable creation date`
+            `Couldn't tell which of client ${clientId}'s secrets is newest from their creation dates`
           )
-          return Boom.badGateway(SECRETS_UNREADABLE_MESSAGE)
+          return Boom.badGateway(
+            "Couldn't tell which of the client's secrets is newest, so no secret was removed"
+          )
         }
 
-        // CDP only removes secrets created before the cutoff, so if the
-        // client is rotated after we listed it, its new secret is kept
+        // CDP only removes secrets created before the cutoff, so the newest
+        // secret we listed is kept, and so is any secret from a rotation
+        // since
         const purgedClients = await purgeCognitoCredential(
           tenantServiceName,
           client.clientName,
@@ -541,7 +565,7 @@ export const clients = [
           (purged) => purged.clientId !== clientId
         )
         if (otherPurgedClients.length > 0) {
-          logger.warn(
+          logger.error(
             `Purging client ${clientId} also purged ${otherPurgedClients.length} other client(s) with the same name`
           )
         }

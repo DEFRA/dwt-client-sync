@@ -836,15 +836,91 @@ describe('POST Clients purge', () => {
   const inject = () => server.inject({ method: 'POST', url, auth })
   const message = (response) => JSON.parse(response.payload).message
 
-  it('purges secrets older than the newest, by the client name', async () => {
+  it.each([
+    ['newest first', [newerSecret, olderSecret]],
+    ['oldest first', [olderSecret, newerSecret]]
+  ])(
+    'purges secrets older than the newest, by the client name (%s)',
+    async (_, secrets) => {
+      cognitoClient.allCognitoCredentials.mockResolvedValue([
+        { ...listedClient, secrets }
+      ])
+
+      const response = await inject()
+
+      expect(response.statusCode).toBe(204)
+      expect(cognitoClient.purgeCognitoCredential).toHaveBeenCalledWith(
+        tenantServiceName,
+        'Test Client',
+        newerSecret.createdAt
+      )
+    }
+  )
+
+  it('tells apart secrets created in the same millisecond by their microseconds', async () => {
+    const sameMillisecond = {
+      id: 'secret-1792131907342',
+      createdAt: '2026-10-16T06:25:07.342999+00:00'
+    }
+    cognitoClient.allCognitoCredentials.mockResolvedValue([
+      { ...listedClient, secrets: [sameMillisecond, olderSecret] }
+    ])
+
     const response = await inject()
 
     expect(response.statusCode).toBe(204)
     expect(cognitoClient.purgeCognitoCredential).toHaveBeenCalledWith(
       tenantServiceName,
       'Test Client',
-      newerSecret.createdAt
+      sameMillisecond.createdAt
     )
+  })
+
+  it('compares creation dates in different time zones', async () => {
+    // 07:25 at UTC+02:00 is 05:25 UTC, so it's older, though its text sorts
+    // after 07:25 UTC
+    const laterInUtc = {
+      id: 'secret-a',
+      createdAt: '2026-10-16T07:25:07.342000+00:00'
+    }
+    const earlierWithOffset = {
+      id: 'secret-b',
+      createdAt: '2026-10-16T07:25:07.342000+02:00'
+    }
+    cognitoClient.allCognitoCredentials.mockResolvedValue([
+      { ...listedClient, secrets: [earlierWithOffset, laterInUtc] }
+    ])
+
+    await inject()
+
+    expect(cognitoClient.purgeCognitoCredential).toHaveBeenCalledWith(
+      tenantServiceName,
+      'Test Client',
+      laterInUtc.createdAt
+    )
+  })
+
+  it.each([
+    [
+      'two secrets were created at the same time',
+      { ...olderSecret, id: 'secret-2' }
+    ],
+    [
+      "a secret's creation date can't be read",
+      { id: 'secret-2', createdAt: 'yesterday' }
+    ]
+  ])('returns a 502 error without purging when %s', async (_, secret) => {
+    cognitoClient.allCognitoCredentials.mockResolvedValue([
+      { ...listedClient, secrets: [olderSecret, secret] }
+    ])
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(502)
+    expect(message(response)).toBe(
+      "Couldn't tell which of the client's secrets is newest, so no secret was removed"
+    )
+    expect(cognitoClient.purgeCognitoCredential).not.toHaveBeenCalled()
   })
 
   it('returns a 409 error without purging when the client has only one secret', async () => {
@@ -861,31 +937,23 @@ describe('POST Clients purge', () => {
     expect(cognitoClient.purgeCognitoCredential).not.toHaveBeenCalled()
   })
 
-  it('returns a 409 error without purging when another client has the same name', async () => {
-    cognitoClient.allCognitoCredentials.mockResolvedValue([
-      listedClient,
-      { ...otherClient, clientName: 'Test Client' }
-    ])
+  it.each([['Test Client'], ['test CLIENT']])(
+    'returns a 409 error without purging when another client is named %s',
+    async (otherName) => {
+      cognitoClient.allCognitoCredentials.mockResolvedValue([
+        listedClient,
+        { ...otherClient, clientName: otherName }
+      ])
 
-    const response = await inject()
+      const response = await inject()
 
-    expect(response.statusCode).toBe(409)
-    expect(message(response)).toBe(
-      "Another client is named 'Test Client', and CDP removes secrets by name, so no secret was removed"
-    )
-    expect(cognitoClient.purgeCognitoCredential).not.toHaveBeenCalled()
-  })
-
-  it('purges when another client has the name in a different case, as CDP matches it exactly', async () => {
-    cognitoClient.allCognitoCredentials.mockResolvedValue([
-      listedClient,
-      { ...otherClient, clientName: 'test client' }
-    ])
-
-    const response = await inject()
-
-    expect(response.statusCode).toBe(204)
-  })
+      expect(response.statusCode).toBe(409)
+      expect(message(response)).toBe(
+        "Another client is named 'Test Client' (case insensitive), and CDP removes secrets by name, so no secret was removed"
+      )
+      expect(cognitoClient.purgeCognitoCredential).not.toHaveBeenCalled()
+    }
+  )
 
   it('returns a 409 error without purging when the stored name is out of date', async () => {
     cognitoClient.allCognitoCredentials.mockResolvedValue([
@@ -932,14 +1000,8 @@ describe('POST Clients purge', () => {
       () => Promise.resolve([{ clientName: 'Test Client', clientId }])
     ],
     [
-      "a secret's creation date can't be read",
-      () =>
-        Promise.resolve([
-          {
-            ...listedClient,
-            secrets: [olderSecret, { id: 'secret-2', createdAt: 'yesterday' }]
-          }
-        ])
+      "the client's secrets in the list are empty",
+      () => Promise.resolve([{ ...listedClient, secrets: [] }])
     ]
   ])('returns a 502 error without purging when %s', async (_, listClients) => {
     cognitoClient.allCognitoCredentials.mockImplementation(listClients)
@@ -982,7 +1044,7 @@ describe('POST Clients purge', () => {
 
       expect(response.statusCode).toBe(502)
       expect(message(response)).toBe(
-        'Purge outcome unknown: the older secret may have been removed. It is safe to try again.'
+        'Purge outcome unknown: the older secret may have been removed. It is safe to try again: if the client then has only one secret, the purge worked.'
       )
     }
   )
@@ -993,6 +1055,7 @@ describe('POST Clients purge', () => {
     const response = await inject()
 
     expect(response.statusCode).toBe(404)
+    expect(message(response)).toBe(`Client '${clientId}' not found in CDP`)
   })
 
   it('returns a 409 error when CDP purges a different client with the stored name', async () => {
@@ -1008,7 +1071,7 @@ describe('POST Clients purge', () => {
     )
   })
 
-  it('warns when CDP also purges other clients with the name', async () => {
+  it('logs an error when CDP also purges other clients with the name', async () => {
     cognitoClient.purgeCognitoCredential.mockResolvedValue([
       { clientName: 'Test Client', clientId: 'other_client_id' },
       purgedClient
@@ -1017,7 +1080,7 @@ describe('POST Clients purge', () => {
     const response = await inject()
 
     expect(response.statusCode).toBe(204)
-    expect(mockLogger.warn).toHaveBeenCalledWith(
+    expect(mockLogger.error).toHaveBeenCalledWith(
       `Purging client ${clientId} also purged 1 other client(s) with the same name`
     )
   })
