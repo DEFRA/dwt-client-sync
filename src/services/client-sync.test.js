@@ -4,12 +4,14 @@ const {
   mockAcquireLock,
   mockReleaseLock,
   mockAllCognitoCredentials,
-  mockStore
+  mockStore,
+  mockReadStoredClients
 } = vi.hoisted(() => ({
   mockAcquireLock: vi.fn(),
   mockReleaseLock: vi.fn(),
   mockAllCognitoCredentials: vi.fn(),
-  mockStore: vi.fn()
+  mockStore: vi.fn(),
+  mockReadStoredClients: vi.fn()
 }))
 
 vi.mock('#/common/helpers/cognito-client.js', () => ({
@@ -17,7 +19,8 @@ vi.mock('#/common/helpers/cognito-client.js', () => ({
 }))
 
 vi.mock('#/services/clients.js', () => ({
-  store: mockStore
+  store: mockStore,
+  readStoredClients: mockReadStoredClients
 }))
 
 vi.mock('#/common/helpers/mongo-lock.js', () => ({
@@ -51,8 +54,36 @@ describe('Software Provider sync', () => {
     mockReleaseLock.mockResolvedValue(mockLock)
   })
 
+  const storedClients = [{ clientId: 'client-1', clientName: 'Client One' }]
+
   beforeEach(() => {
     vi.clearAllMocks()
+    mockReadStoredClients.mockResolvedValue(storedClients)
+  })
+
+  // Otherwise a client created after the list, and saved before the read,
+  // looks deleted from CDP
+  it('reads the stored clients before listing CDP, and stores against them', async () => {
+    mockAllCognitoCredentials.mockResolvedValue([])
+    const db = {}
+
+    await sync(db)
+
+    const [readOrder] = mockReadStoredClients.mock.invocationCallOrder
+    const [listOrder] = mockAllCognitoCredentials.mock.invocationCallOrder
+    expect(readOrder).toBeLessThan(listOrder)
+    expect(mockReadStoredClients).toHaveBeenCalledWith(
+      expect.anything(),
+      db,
+      'service-one'
+    )
+    expect(mockStore).toHaveBeenCalledWith(
+      expect.anything(),
+      db,
+      [],
+      'service-one',
+      storedClients
+    )
   })
 
   it('returns all synced clients', async () => {
@@ -99,7 +130,8 @@ describe('Software Provider sync', () => {
           tenantServiceName: 'service-one'
         }
       ],
-      'service-one'
+      'service-one',
+      storedClients
     )
   })
 
@@ -159,13 +191,15 @@ describe('Software Provider sync', () => {
       expect.anything(),
       db,
       [],
-      'service-one'
+      'service-one',
+      storedClients
     )
     expect(mockStore).toHaveBeenCalledWith(
       expect.anything(),
       db,
       [],
-      'service-two'
+      'service-two',
+      storedClients
     )
   })
 
