@@ -73,7 +73,7 @@ describe('#store', () => {
   it('upserts a client that is not stored yet, in case create has saved it since', async () => {
     const existing = []
     mockBulkWrite.mockResolvedValue({
-      insertedCount: 1,
+      upsertedCount: 1,
       modifiedCount: 0,
       deletedCount: 0
     })
@@ -101,7 +101,7 @@ describe('#store', () => {
       { ordered: false }
     )
     expect(result).toEqual({
-      insertedCount: 1,
+      upsertedCount: 1,
       modifiedCount: 0,
       deletedCount: 0
     })
@@ -110,7 +110,7 @@ describe('#store', () => {
   it('updates a client whose fields have changed', async () => {
     const existing = [{ clientId: 'client-1', clientName: 'Old Name' }]
     mockBulkWrite.mockResolvedValue({
-      insertedCount: 0,
+      upsertedCount: 0,
       modifiedCount: 1,
       deletedCount: 0
     })
@@ -155,7 +155,7 @@ describe('#store', () => {
   it('deletes a client that is missing from the incoming list', async () => {
     const existing = [{ clientId: 'client-1', clientName: 'Client One' }]
     mockBulkWrite.mockResolvedValue({
-      insertedCount: 0,
+      upsertedCount: 0,
       modifiedCount: 0,
       deletedCount: 1
     })
@@ -173,7 +173,7 @@ describe('#store', () => {
       { ordered: false }
     )
     expect(result).toEqual({
-      insertedCount: 0,
+      upsertedCount: 0,
       modifiedCount: 0,
       deletedCount: 1
     })
@@ -186,7 +186,7 @@ describe('#store', () => {
       { clientId: 'client-3', clientName: 'To Be Deleted' }
     ]
     mockBulkWrite.mockResolvedValue({
-      insertedCount: 1,
+      upsertedCount: 1,
       modifiedCount: 1,
       deletedCount: 1
     })
@@ -262,7 +262,7 @@ describe('#store', () => {
 
     const bulkWriteError = new Error('Duplicate key')
     bulkWriteError.writeErrors = ['some write error']
-    bulkWriteError.result = { insertedCount: 0 }
+    bulkWriteError.result = { upsertedCount: 0 }
     mockBulkWrite.mockRejectedValue(bulkWriteError)
 
     const incomingClients = [{ clientId: 'client-1', clientName: 'Client One' }]
