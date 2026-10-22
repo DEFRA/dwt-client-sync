@@ -35,9 +35,6 @@ vi.mock('#/config.js', () => ({
       deleteClientsPath: '/delete-clients/{service_name}',
       rotateClientsPath: '/rotate-clients/{service-name}',
       purgeClientsPath: '/purge-clients/{service-name}',
-      rotateTimeoutMs: 5000,
-      createTimeoutMs: 6000,
-      purgeTimeoutMs: 7000,
       protocol: 'https'
     }))
   }
@@ -137,6 +134,9 @@ describe('allCognitoCredentials', () => {
       { page_size: '60' },
       { page_size: '60', next_token: 'token+/=1' },
       { page_size: '60', next_token: 'token2' }
+    ])
+    expect(mockGet.mock.calls.map(([, options]) => options.timeout)).toEqual([
+      120_000, 120_000, 120_000
     ])
   })
 
@@ -465,7 +465,7 @@ describe('createCognitoCredential', () => {
     await createCognitoCredential('my-service', 'new-client')
 
     const options = mockPost.mock.calls[0][1]
-    expect(options.timeout).toBe(6000)
+    expect(options.timeout).toBe(120_000)
   })
 
   it.each([
@@ -568,7 +568,7 @@ describe('rotateCognitoCredential', () => {
 
     const [url, options] = mockPost.mock.calls[0]
     expect(url).toBe('https://example.com/rotate-clients/my%20service')
-    expect(options.timeout).toBe(5000)
+    expect(options.timeout).toBe(120_000)
   })
 
   it('accepts any 2xx response', async () => {
@@ -701,7 +701,7 @@ describe('purgeCognitoCredential', () => {
 
     const [url, options] = mockPost.mock.calls[0]
     expect(url).toBe('https://example.com/purge-clients/my%20service')
-    expect(options.timeout).toBe(7000)
+    expect(options.timeout).toBe(120_000)
   })
 
   it('reports a known failure when CDP refuses the request', async () => {
@@ -794,7 +794,7 @@ describe('deleteCognitoCredential', () => {
     expect(options.payload).toBe(requestToSign.body)
   })
 
-  it('encodes the service name in the path', async () => {
+  it('sets a timeout and encodes the service name in the path', async () => {
     mockPost.mockResolvedValue({
       res: { statusCode: 200 },
       payload: {
@@ -807,8 +807,9 @@ describe('deleteCognitoCredential', () => {
 
     await deleteCognitoCredential('my service', 'my_client')
 
-    const url = mockPost.mock.calls[0][0]
+    const [url, options] = mockPost.mock.calls[0]
     expect(url).toBe('https://example.com/delete-clients/my%20service')
+    expect(options.timeout).toBe(120_000)
   })
 
   it('throws an error when the backend returns a non-200 status', async () => {

@@ -16,11 +16,15 @@ const {
   rotateClientsPath,
   purgeClientsPath,
   deleteClientsPath,
-  rotateTimeoutMs,
-  createTimeoutMs,
-  purgeTimeoutMs,
   protocol
 } = config.get('cognito')
+
+// CDP's docs say to allow up to 120 seconds for a response, so this only ends
+// a call that will never get one, such as on a connection that dies silently.
+// Sync holds its lock while it lists, so a hung list would stop every later
+// sync. Wreck applies it to getting the response and to reading its body
+// separately, so a call can take up to about 240 seconds
+const requestTimeoutMs = 120_000
 
 /**
  * A failed create, rotate or purge request. `outcomeUnknown` is true when CDP may
@@ -185,7 +189,8 @@ async function fetchClientsPage(serviceName, { pageSize, nextToken }) {
 
   const { res, payload } = await Wreck.get(uri, {
     headers: signed.headers,
-    json: true
+    json: true,
+    timeout: requestTimeoutMs
   })
 
   if (res.statusCode !== 200) {
@@ -344,7 +349,7 @@ async function createCognitoCredential(serviceName, newClientName) {
   logger.info(uri)
 
   const payload = await postToCdp('create', uri, signed, {
-    timeout: createTimeoutMs
+    timeout: requestTimeoutMs
   })
 
   logger.info(
@@ -390,7 +395,7 @@ async function rotateCognitoCredential(serviceName, clientName) {
   logger.info(uri)
 
   const payload = await postToCdp('rotate', uri, signed, {
-    timeout: rotateTimeoutMs
+    timeout: requestTimeoutMs
   })
 
   logger.info('Successfully rotated Cognito credentials')
@@ -438,7 +443,7 @@ async function purgeCognitoCredential(serviceName, clientName, creationCutoff) {
   logger.info(uri)
 
   const payload = await postToCdp('purge', uri, signed, {
-    timeout: purgeTimeoutMs
+    timeout: requestTimeoutMs
   })
 
   logger.info('Successfully purged old Cognito credentials')
@@ -477,7 +482,8 @@ async function deleteCognitoCredential(serviceName, clientName) {
   const { res, payload } = await Wreck.post(uri, {
     headers: signed.headers,
     json: true,
-    payload: signed.body
+    payload: signed.body,
+    timeout: requestTimeoutMs
   })
 
   // A deletion returns no clients
