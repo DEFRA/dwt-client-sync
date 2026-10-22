@@ -32,7 +32,7 @@ const OUTCOME_UNKNOWN_MESSAGE =
 // CDP returns a new client's secret only once, and a retry is skipped as a
 // duplicate, so the caller can only get a secret by rotating
 const CREATE_OUTCOME_UNKNOWN_MESSAGE =
-  "Create outcome unknown: the client may have been created, but its secret couldn't be returned. Check the client, and rotate its secret if it exists."
+  "Create outcome unknown: the client may have been created, but its secret couldn't be returned. It won't be listed until the next sync (or POST /clients/sync). If it exists then, rotate its secret."
 
 // Purging is idempotent, and the newest secret is always kept, so a retry
 // can't leave the client without a secret
@@ -111,21 +111,6 @@ function purgeError(outcome, { clientId, clientName }) {
       return Boom.badGateway(PURGE_OUTCOME_UNKNOWN_MESSAGE)
     default:
       throw new Error(`Unknown purge outcome: ${outcome}`)
-  }
-}
-
-/**
- * Syncs after a create whose response doesn't say what was created, so a
- * client CDP did create is stored. A failed sync is only logged: the next
- * scheduled sync stores the client.
- * @param {object} db
- * @param {object} locker
- */
-async function syncAfterUnclearCreate(db, locker) {
-  try {
-    await sync(db, locker)
-  } catch (err) {
-    logger.error(`Sync after an unclear create failed: ${err.message}`)
   }
 }
 
@@ -230,7 +215,6 @@ export const clients = [
       try {
         const {
           db,
-          locker,
           payload,
           params: { tenantServiceName }
         } = request
@@ -277,11 +261,9 @@ export const clients = [
           throw err
         }
 
-        // A success response we can't read: CDP may still have created it.
-        // Sync, so a client it did create can be found and rotated
+        // A success response we can't read: CDP may still have created it
         if (!Array.isArray(createdClients)) {
           logger.error("CDP's create response has no client details")
-          await syncAfterUnclearCreate(db, locker)
           return Boom.badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE)
         }
 
@@ -296,7 +278,6 @@ export const clients = [
 
         if (!createdClient?.clientId) {
           logger.error("CDP's create response doesn't include the client")
-          await syncAfterUnclearCreate(db, locker)
           return Boom.badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE)
         }
 
