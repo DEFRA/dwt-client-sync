@@ -413,7 +413,9 @@ describe('POST Clients', () => {
     })
 
   const createOutcomeUnknownMessage =
-    "Create outcome unknown: the client may have been created, but its secret couldn't be returned. It won't be listed until the next sync (or POST /clients/sync). If it exists then, rotate its secret."
+    "Create outcome unknown: the client may have been created, but its secret couldn't be returned. It can't be found or rotated here until the next sync (or POST /clients/sync). If it exists then, rotate its secret."
+  const createNoSecretMessage =
+    "The client was created, but CDP didn't return its secret. Rotate its secret to get one."
 
   it.each([
     ['returns no client details', () => Promise.resolve(undefined)],
@@ -460,12 +462,12 @@ describe('POST Clients', () => {
       'CDP may have created the client',
       () =>
         Promise.reject(new MockCdpError('Timed out', { outcomeUnknown: true })),
-      { saves: false }
+      { saves: false, message: createOutcomeUnknownMessage }
     ],
     [
       "CDP's response has no client details",
       () => Promise.resolve(undefined),
-      { saves: false }
+      { saves: false, message: createOutcomeUnknownMessage }
     ],
     [
       "CDP's response has no secret for the client",
@@ -473,7 +475,7 @@ describe('POST Clients', () => {
         Promise.resolve([
           { clientName: 'goodName1-_.', clientId: 'my_client_id' }
         ]),
-      { saves: true }
+      { saves: true, message: createNoSecretMessage }
     ],
     [
       "CDP's response has a secret but no client id",
@@ -481,7 +483,7 @@ describe('POST Clients', () => {
         Promise.resolve([
           { clientName: 'goodName1-_.', clientSecret: 'my_client_secret' }
         ]),
-      { saves: false }
+      { saves: false, message: createOutcomeUnknownMessage }
     ],
     [
       "CDP's response is for a different client",
@@ -493,23 +495,18 @@ describe('POST Clients', () => {
             clientSecret: 'other_secret'
           }
         ]),
-      { saves: false }
+      { saves: false, message: createOutcomeUnknownMessage }
     ]
-  ])(
-    'returns a 502 error with an unknown outcome when %s',
-    async (_, create, { saves }) => {
-      createCognitoCredential.mockImplementationOnce(create)
+  ])('returns a 502 error when %s', async (_, create, { saves, message }) => {
+    createCognitoCredential.mockImplementationOnce(create)
 
-      const response = await createClient()
+    const response = await createClient()
 
-      expect(response.statusCode).toBe(502)
-      expect(JSON.parse(response.payload).message).toBe(
-        createOutcomeUnknownMessage
-      )
-      expect(clientService.saveClient).toHaveBeenCalledTimes(saves ? 1 : 0)
-      expect(clientSyncService.sync).not.toHaveBeenCalled()
-    }
-  )
+    expect(response.statusCode).toBe(502)
+    expect(JSON.parse(response.payload).message).toBe(message)
+    expect(clientService.saveClient).toHaveBeenCalledTimes(saves ? 1 : 0)
+    expect(clientSyncService.sync).not.toHaveBeenCalled()
+  })
 
   it('returns a 409 error when CDP skips the name because it already exists', async () => {
     createCognitoCredential.mockResolvedValueOnce([])
@@ -533,9 +530,7 @@ describe('POST Clients', () => {
     const response = await createClient()
 
     expect(response.statusCode).toBe(502)
-    expect(JSON.parse(response.payload).message).toBe(
-      createOutcomeUnknownMessage
-    )
+    expect(JSON.parse(response.payload).message).toBe(createNoSecretMessage)
   })
 
   it('tells clients not to store the response', async () => {
