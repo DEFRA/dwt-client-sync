@@ -6,7 +6,8 @@ import { createLogger } from '#/common/helpers/logging/logger.js'
 import { managedServices } from '#/common/helpers/managed-services.js'
 import { sync } from '#/services/client-sync.js'
 import { deleteClient } from '#/services/client-delete.js'
-import { purgeOldSecret, PurgeOutcome } from '#/services/client-purge.js'
+import { purgeOldSecret } from '#/services/client-purge.js'
+import { PurgeOutcome } from '#/domain/client-secrets.js'
 import {
   toClientResponse,
   toClientCredentialsResponse
@@ -73,9 +74,9 @@ function clientNotFound(tenantServiceName, clientId) {
 /**
  * @param {string} outcome - A PurgeOutcome other than PURGED
  * @param {{ clientId: string, clientName: string }} client
- * @returns {Boom.Boom} The error saying why no secret was removed
+ * @returns {Boom.Boom} The error for the outcome
  */
-function purgeRefused(outcome, { clientId, clientName }) {
+function purgeError(outcome, { clientId, clientName }) {
   switch (outcome) {
     case PurgeOutcome.NOT_IN_CDP:
       return Boom.notFound(`Client '${clientId}' not found in CDP`)
@@ -99,12 +100,16 @@ function purgeRefused(outcome, { clientId, clientName }) {
       return Boom.conflict(
         `Client '${clientId}' has two secrets created at the same time, so neither is older to remove`
       )
-    case PurgeOutcome.SECRETS_UNREADABLE:
+    case PurgeOutcome.LIST_UNREADABLE:
+    case PurgeOutcome.NO_SECRETS:
+    case PurgeOutcome.DATE_UNREADABLE:
       return Boom.badGateway(
         "Couldn't read the client's secrets from CDP, so no secret was removed"
       )
-    default:
+    case PurgeOutcome.OUTCOME_UNKNOWN:
       return Boom.badGateway(PURGE_OUTCOME_UNKNOWN_MESSAGE)
+    default:
+      throw new Error(`Unknown purge outcome: ${outcome}`)
   }
 }
 
@@ -460,7 +465,7 @@ export const clients = [
         const outcome = await purgeOldSecret(tenantServiceName, client)
 
         if (outcome !== PurgeOutcome.PURGED) {
-          return purgeRefused(outcome, client)
+          return purgeError(outcome, client)
         }
 
         return h.response().code(204)

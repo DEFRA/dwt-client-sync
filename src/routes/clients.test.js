@@ -789,10 +789,12 @@ describe('POST Clients purge', () => {
   let server
   let clientService
   let purgeService
+  let PurgeOutcome
 
   beforeAll(async () => {
     clientService = await import('#/services/clients.js')
     purgeService = await import('#/services/client-purge.js')
+    ;({ PurgeOutcome } = await import('#/domain/client-secrets.js'))
     const { createServer } = await import('#/server.js')
 
     server = await createServer()
@@ -802,7 +804,7 @@ describe('POST Clients purge', () => {
   beforeEach(() => {
     vi.spyOn(clientService, 'findClient').mockResolvedValue(storedClient)
     vi.spyOn(purgeService, 'purgeOldSecret').mockResolvedValue(
-      purgeService.PurgeOutcome.PURGED
+      PurgeOutcome.PURGED
     )
   })
 
@@ -850,20 +852,18 @@ describe('POST Clients purge', () => {
       409,
       `Client '${clientId}' has two secrets created at the same time, so neither is older to remove`
     ],
-    [
-      'SECRETS_UNREADABLE',
+    ...['LIST_UNREADABLE', 'NO_SECRETS', 'DATE_UNREADABLE'].map((outcome) => [
+      outcome,
       502,
       "Couldn't read the client's secrets from CDP, so no secret was removed"
-    ],
+    ]),
     [
       'OUTCOME_UNKNOWN',
       502,
       'Purge outcome unknown: the older secret may have been removed. It is safe to try again: if the client then has only one secret, the purge worked.'
     ]
   ])('returns %s as a %i error', async (outcome, statusCode, expected) => {
-    purgeService.purgeOldSecret.mockResolvedValue(
-      purgeService.PurgeOutcome[outcome]
-    )
+    purgeService.purgeOldSecret.mockResolvedValue(PurgeOutcome[outcome])
 
     const response = await inject()
 
@@ -907,6 +907,14 @@ describe('POST Clients purge', () => {
     expect(message(response)).toBe(
       'Purge outcome unknown: the older secret may have been removed. It is safe to try again: if the client then has only one secret, the purge worked.'
     )
+  })
+
+  it('returns a 500 error for an outcome it does not know', async () => {
+    purgeService.purgeOldSecret.mockResolvedValue('not an outcome')
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(500)
   })
 
   it('returns a 500 error when an unexpected error is thrown', async () => {
