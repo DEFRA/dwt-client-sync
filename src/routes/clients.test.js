@@ -478,6 +478,14 @@ describe('POST Clients', () => {
       { saves: true, syncs: false }
     ],
     [
+      "CDP's response has a secret but no client id",
+      () =>
+        Promise.resolve([
+          { clientName: 'goodName1-_.', clientSecret: 'my_client_secret' }
+        ]),
+      { saves: false, syncs: true }
+    ],
+    [
       "CDP's response is for a different client",
       () =>
         Promise.resolve([
@@ -526,6 +534,22 @@ describe('POST Clients', () => {
     expect(JSON.parse(response.payload).message).toBe(
       "Client name 'goodName1-_.' already exists (case insensitive)"
     )
+    expect(clientService.saveClient).not.toHaveBeenCalled()
+    expect(clientSyncService.sync).not.toHaveBeenCalled()
+  })
+
+  it('still returns a 502 error when saving a client without a secret fails', async () => {
+    createCognitoCredential.mockResolvedValueOnce([
+      { clientName: 'goodName1-_.', clientId: 'my_client_id' }
+    ])
+    clientService.saveClient.mockRejectedValue(new Error('Mongo down'))
+
+    const response = await createClient()
+
+    expect(response.statusCode).toBe(502)
+    expect(JSON.parse(response.payload).message).toBe(
+      createOutcomeUnknownMessage
+    )
   })
 
   it('tells clients not to store the response', async () => {
@@ -555,6 +579,36 @@ describe('POST Clients', () => {
       clientId: 'my_client_id',
       clientSecret: 'my_client_secret'
     })
+  })
+
+  it('stores the created client so it can be fetched straight away', async () => {
+    clientService.saveClient.mockRestore()
+
+    await createClient()
+    await createClient()
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/clients/waste-movement-external-api/my_client_id',
+      auth
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(JSON.parse(response.payload)).toStrictEqual({
+      clientId: 'my_client_id',
+      clientName: 'goodName1-_.',
+      tenantServiceName: 'waste-movement-external-api'
+    })
+    // Saving the same client twice leaves one record
+    expect(
+      await server.db
+        .collection('clients')
+        .countDocuments({ clientId: 'my_client_id' })
+    ).toBe(1)
+
+    await server.db
+      .collection('clients')
+      .deleteMany({ clientId: 'my_client_id' })
   })
 
   it('logs an error but still returns the secret when saving fails', async () => {

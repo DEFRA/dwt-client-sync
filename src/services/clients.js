@@ -40,10 +40,11 @@ export function findClients(tenantServiceName, db) {
 /**
  * Stores one client, replacing any stored client with the same id.
  *
- * Sync deletes stored clients that aren't in its list from CDP, so a client
- * saved while a sync runs (after it lists, before it writes) is deleted, and
- * comes back at the next sync. We accept that: the window is under a second,
- * and syncs are scheduled daily.
+ * Sync deletes stored clients that aren't in its list from CDP. A sync that
+ * lists a service's clients before a create, and reads the stored clients
+ * after the save, deletes the new record until the next sync. We accept that:
+ * listing is usually quick, and syncs only run daily or on request. It isn't
+ * new: a create used to skip its own sync while another held the lock.
  *
  * @param {MongoDb} db - The db
  * @param {ClientRecord} record - The client to store
