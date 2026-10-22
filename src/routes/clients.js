@@ -517,8 +517,8 @@ export const clients = [
 
         const [newest, nextNewest] = sorted
 
-        // Neither secret is created before the other, so CDP would remove
-        // nothing
+        // Created in the same millisecond, neither secret is before the
+        // other's cutoff, so CDP would remove nothing
         if (newest.time === nextNewest.time) {
           return Boom.conflict(
             `Client '${clientId}' has two secrets created at the same time, so neither is older to remove`
