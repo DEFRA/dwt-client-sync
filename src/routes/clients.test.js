@@ -302,9 +302,11 @@ describe('POST Clients', () => {
   let server
   let createCognitoCredential
   let clientSyncService
+  let clientService
   let allCognitoCredentials
 
   beforeAll(async () => {
+    clientService = await import('#/services/clients.js')
     createCognitoCredential = (
       await import('#/common/helpers/cognito-client.js')
     ).createCognitoCredential
@@ -322,6 +324,7 @@ describe('POST Clients', () => {
       totalServicesProcessed: 0,
       services: []
     })
+    vi.spyOn(clientService, 'saveClient').mockResolvedValue()
 
     allCognitoCredentials.mockResolvedValue([])
     createCognitoCredential.mockResolvedValue([
@@ -452,19 +455,27 @@ describe('POST Clients', () => {
     )
   })
 
+  // Only a response that doesn't identify the client needs a sync, so a
+  // client CDP did create can be found and rotated
   it.each([
     [
       'CDP may have created the client',
       () =>
-        Promise.reject(new MockCdpError('Timed out', { outcomeUnknown: true }))
+        Promise.reject(new MockCdpError('Timed out', { outcomeUnknown: true })),
+      { saves: false, syncs: false }
     ],
-    ["CDP's response has no client details", () => Promise.resolve(undefined)],
+    [
+      "CDP's response has no client details",
+      () => Promise.resolve(undefined),
+      { saves: false, syncs: true }
+    ],
     [
       "CDP's response has no secret for the client",
       () =>
         Promise.resolve([
           { clientName: 'goodName1-_.', clientId: 'my_client_id' }
-        ])
+        ]),
+      { saves: true, syncs: false }
     ],
     [
       "CDP's response is for a different client",
@@ -475,11 +486,12 @@ describe('POST Clients', () => {
             clientId: 'other_client_id',
             clientSecret: 'other_secret'
           }
-        ])
+        ]),
+      { saves: false, syncs: true }
     ]
   ])(
     'returns a 502 error with an unknown outcome when %s',
-    async (_, create) => {
+    async (_, create, { saves, syncs }) => {
       createCognitoCredential.mockImplementationOnce(create)
 
       const response = await createClient()
@@ -488,8 +500,22 @@ describe('POST Clients', () => {
       expect(JSON.parse(response.payload).message).toBe(
         createOutcomeUnknownMessage
       )
+      expect(clientService.saveClient).toHaveBeenCalledTimes(saves ? 1 : 0)
+      expect(clientSyncService.sync).toHaveBeenCalledTimes(syncs ? 1 : 0)
     }
   )
+
+  it('still returns a 502 error when the sync after an unclear response fails', async () => {
+    createCognitoCredential.mockResolvedValueOnce(undefined)
+    clientSyncService.sync.mockRejectedValue(new Error('Sync failed'))
+
+    const response = await createClient()
+
+    expect(response.statusCode).toBe(502)
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'Sync after an unclear create failed: Sync failed'
+    )
+  })
 
   it('returns a 409 error when CDP skips the name because it already exists', async () => {
     createCognitoCredential.mockResolvedValueOnce([])
@@ -509,62 +535,41 @@ describe('POST Clients', () => {
     expect(response.headers['cache-control']).toBe('no-store')
   })
 
-  it('syncs database when validation passes', async () => {
-    const response = await server.inject({
-      method: 'POST',
-      url: '/clients/waste-movement-external-api',
-      auth,
-      payload: {
-        clientName: 'goodName1-_.'
-      }
-    })
+  it("saves the created client's record, without syncing", async () => {
+    const response = await createClient()
 
     expect(response.statusCode).toBe(200)
-    expect(clientSyncService.sync).toHaveBeenCalled()
+    expect(clientService.saveClient).toHaveBeenCalledWith(expect.anything(), {
+      clientId: 'my_client_id',
+      clientName: 'goodName1-_.',
+      tenantServiceName: 'waste-movement-external-api'
+    })
+    expect(clientSyncService.sync).not.toHaveBeenCalled()
   })
 
   it('returns created cognito credentials', async () => {
-    const response = await server.inject({
-      method: 'POST',
-      url: '/clients/waste-movement-external-api',
-      auth,
-      payload: {
-        clientName: 'goodName1-_.'
-      }
-    })
+    const response = await createClient()
 
-    const responseBody = JSON.parse(response.payload)
-    expect(responseBody).toStrictEqual({
+    expect(JSON.parse(response.payload)).toStrictEqual({
       clientName: 'goodName1-_.',
       clientId: 'my_client_id',
       clientSecret: 'my_client_secret'
     })
-    expect(clientSyncService.sync).toHaveBeenCalled()
   })
 
-  it('logs an error but still returns when sync fails', async () => {
-    vi.spyOn(clientSyncService, 'sync').mockRejectedValue(
-      new Error('Sync failed')
-    )
+  it('logs an error but still returns the secret when saving fails', async () => {
+    clientService.saveClient.mockRejectedValue(new Error('Mongo down'))
 
-    const response = await server.inject({
-      method: 'POST',
-      url: '/clients/waste-movement-external-api',
-      auth,
-      payload: {
-        clientName: 'goodName1-_.'
-      }
-    })
+    const response = await createClient()
 
     expect(response.statusCode).toBe(200)
-    const responseBody = JSON.parse(response.payload)
-    expect(responseBody).toStrictEqual({
+    expect(JSON.parse(response.payload)).toStrictEqual({
       clientName: 'goodName1-_.',
       clientId: 'my_client_id',
       clientSecret: 'my_client_secret'
     })
     expect(mockLogger.error).toHaveBeenCalledWith(
-      'Sync failed with error: Sync failed'
+      'Saving created client failed: Mongo down'
     )
   })
 })

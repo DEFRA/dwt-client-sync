@@ -38,6 +38,25 @@ export function findClients(tenantServiceName, db) {
 }
 
 /**
+ * Stores one client, replacing any stored client with the same id.
+ *
+ * Sync deletes stored clients that aren't in its list from CDP, so a client
+ * saved while a sync runs (after it lists, before it writes) is deleted, and
+ * comes back at the next sync. We accept that: the window is under a second,
+ * and syncs are scheduled daily.
+ *
+ * @param {MongoDb} db - The db
+ * @param {ClientRecord} record - The client to store
+ */
+export async function saveClient(db, record) {
+  const { tenantServiceName, clientId } = record
+
+  await db
+    .collection(collectionName)
+    .replaceOne({ tenantServiceName, clientId }, record, { upsert: true })
+}
+
+/**
  * Makes the stored clients for the given tenantServiceName match the given clients.
  *
  * @param {Logger} logger - The logger

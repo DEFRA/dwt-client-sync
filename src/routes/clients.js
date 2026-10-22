@@ -1,7 +1,7 @@
 import Boom from '@hapi/boom'
 import Joi from 'joi'
 import { clientSchema } from '#/common/helpers/validation.js'
-import { findClient, findClients } from '#/services/clients.js'
+import { findClient, findClients, saveClient } from '#/services/clients.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { managedServices } from '#/common/helpers/managed-services.js'
 import { sync } from '#/services/client-sync.js'
@@ -9,6 +9,7 @@ import { deleteClient } from '#/services/client-delete.js'
 import { purgeOldSecret } from '#/services/client-purge.js'
 import { PurgeOutcome } from '#/domain/client-secrets.js'
 import {
+  toClientRecord,
   toClientResponse,
   toClientCredentialsResponse
 } from '#/models/client-mapper.js'
@@ -110,6 +111,21 @@ function purgeError(outcome, { clientId, clientName }) {
       return Boom.badGateway(PURGE_OUTCOME_UNKNOWN_MESSAGE)
     default:
       throw new Error(`Unknown purge outcome: ${outcome}`)
+  }
+}
+
+/**
+ * Syncs after a create whose response doesn't say what was created, so a
+ * client CDP did create is stored. A failed sync is only logged: the next
+ * scheduled sync stores the client.
+ * @param {object} db
+ * @param {object} locker
+ */
+async function syncAfterUnclearCreate(db, locker) {
+  try {
+    await sync(db, locker)
+  } catch (err) {
+    logger.error(`Sync after an unclear create failed: ${err.message}`)
   }
 }
 
@@ -261,20 +277,11 @@ export const clients = [
           throw err
         }
 
-        // Sync
-        logger.info('Sync client called')
-        try {
-          await sync(db, locker)
-        } catch (err) {
-          // If credential creation succeeds but sync fails, log error, but still return 'success'
-          // Credential secrets cannot be retrieved later so must be returned
-          // Scheduled sync should fix the cache later
-          logger.error(`Sync failed with error: ${err.message}`)
-        }
-
-        // A success response we can't read: CDP may still have created it
+        // A success response we can't read: CDP may still have created it.
+        // Sync, so a client it did create can be found and rotated
         if (!Array.isArray(createdClients)) {
           logger.error("CDP's create response has no client details")
+          await syncAfterUnclearCreate(db, locker)
           return Boom.badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE)
         }
 
@@ -287,7 +294,23 @@ export const clients = [
           (client) => client.clientName === payload.clientName
         )
 
-        if (!createdClient?.clientSecret) {
+        if (!createdClient?.clientId) {
+          logger.error("CDP's create response doesn't include the client")
+          await syncAfterUnclearCreate(db, locker)
+          return Boom.badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE)
+        }
+
+        // Stored now, rather than at the next sync, so it can be found and
+        // rotated straight away
+        try {
+          await saveClient(db, toClientRecord(createdClient, tenantServiceName))
+        } catch (err) {
+          // The secret can't be retrieved later, so it's still returned. The
+          // next sync stores the client
+          logger.error(`Saving created client failed: ${err.message}`)
+        }
+
+        if (!createdClient.clientSecret) {
           logger.error("CDP's create response has no secret for the client")
           return Boom.badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE)
         }

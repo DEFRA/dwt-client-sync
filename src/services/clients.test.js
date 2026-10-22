@@ -1,4 +1,4 @@
-import { findClient, store } from './clients.js'
+import { findClient, saveClient, store } from './clients.js'
 
 describe('#findClient', () => {
   const dbFindFn = vi.fn()
@@ -297,5 +297,39 @@ describe('#store', () => {
     expect(logger.error).toHaveBeenCalledWith(
       `Sync partially or fully failed for ${tenantServiceName} with error ${bulkWriteError}, writeErrors: ${bulkWriteError.writeErrors}, result: ${bulkWriteError.result}`
     )
+  })
+})
+
+describe('#saveClient', () => {
+  it('replaces any stored client with the same id, or inserts it', async () => {
+    const replaceOne = vi.fn().mockResolvedValue({ upsertedCount: 1 })
+    const db = { collection: vi.fn(() => ({ replaceOne })) }
+    const record = {
+      clientId: 'my_client_id',
+      clientName: 'Test Client',
+      tenantServiceName: 'waste-movement-external-api'
+    }
+
+    await saveClient(db, record)
+
+    expect(replaceOne).toHaveBeenCalledWith(
+      {
+        tenantServiceName: 'waste-movement-external-api',
+        clientId: 'my_client_id'
+      },
+      record,
+      { upsert: true }
+    )
+  })
+
+  it('passes on a failed write', async () => {
+    const err = new Error('Mongo down')
+    const db = {
+      collection: () => ({ replaceOne: vi.fn().mockRejectedValue(err) })
+    }
+
+    await expect(
+      saveClient(db, { clientId: 'id', tenantServiceName: 'service' })
+    ).rejects.toBe(err)
   })
 })
