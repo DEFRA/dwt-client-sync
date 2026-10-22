@@ -22,6 +22,7 @@ vi.mock('#/common/helpers/cognito-client.js', () => ({
   allCognitoCredentials: vi.fn().mockResolvedValue([]),
   createCognitoCredential: vi.fn(),
   rotateCognitoCredential: vi.fn(),
+  purgeCognitoCredential: vi.fn(),
   deleteCognitoCredential: vi.fn(),
   deleteClient: vi.fn(),
   CdpError: MockCdpError
@@ -775,6 +776,292 @@ describe('POST Clients rotate', () => {
   })
 })
 
+describe('POST Clients purge', () => {
+  const auth = { strategy: 'basic', credentials: { username: 'test' } }
+  const tenantServiceName = 'waste-movement-external-api'
+  const clientId = 'my_client_id'
+  const url = `/clients/${tenantServiceName}/${clientId}/purge`
+  const olderSecret = {
+    id: 'secret-1792131907342',
+    createdAt: '2026-10-16T06:25:07.342000+00:00'
+  }
+  const newerSecret = {
+    id: 'secret-1792218307342',
+    createdAt: '2026-10-17T06:25:07.342000+00:00'
+  }
+  const listedClient = {
+    clientName: 'Test Client',
+    clientId,
+    secrets: [newerSecret, olderSecret]
+  }
+  const otherClient = {
+    clientName: 'Other Client',
+    clientId: 'other_client_id',
+    secrets: [olderSecret, newerSecret]
+  }
+  const purgedClient = { clientName: 'Test Client', clientId }
+  let server
+  let cognitoClient
+  let clientService
+
+  beforeAll(async () => {
+    cognitoClient = await import('#/common/helpers/cognito-client.js')
+    clientService = await import('#/services/clients.js')
+    const { createServer } = await import('#/server.js')
+
+    server = await createServer()
+    await server.initialize()
+  })
+
+  beforeEach(() => {
+    vi.spyOn(clientService, 'findClient').mockResolvedValue({
+      clientName: 'Test Client',
+      clientId,
+      tenantServiceName
+    })
+
+    cognitoClient.allCognitoCredentials.mockResolvedValue([
+      otherClient,
+      listedClient
+    ])
+    cognitoClient.purgeCognitoCredential.mockResolvedValue([purgedClient])
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    cognitoClient.allCognitoCredentials.mockReset()
+    cognitoClient.purgeCognitoCredential.mockReset()
+  })
+
+  const inject = () => server.inject({ method: 'POST', url, auth })
+  const message = (response) => JSON.parse(response.payload).message
+
+  it('purges secrets older than the newest, by the client name', async () => {
+    const response = await inject()
+
+    expect(response.statusCode).toBe(204)
+    expect(cognitoClient.purgeCognitoCredential).toHaveBeenCalledWith(
+      tenantServiceName,
+      'Test Client',
+      newerSecret.createdAt
+    )
+  })
+
+  it('returns a 409 error without purging when the client has only one secret', async () => {
+    cognitoClient.allCognitoCredentials.mockResolvedValue([
+      { ...listedClient, secrets: [newerSecret] }
+    ])
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(409)
+    expect(message(response)).toBe(
+      `Client '${clientId}' has only one secret, so there is none to remove`
+    )
+    expect(cognitoClient.purgeCognitoCredential).not.toHaveBeenCalled()
+  })
+
+  it('returns a 409 error without purging when another client has the same name', async () => {
+    cognitoClient.allCognitoCredentials.mockResolvedValue([
+      listedClient,
+      { ...otherClient, clientName: 'Test Client' }
+    ])
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(409)
+    expect(message(response)).toBe(
+      "Another client is named 'Test Client', and CDP removes secrets by name, so no secret was removed"
+    )
+    expect(cognitoClient.purgeCognitoCredential).not.toHaveBeenCalled()
+  })
+
+  it('purges when another client has the name in a different case, as CDP matches it exactly', async () => {
+    cognitoClient.allCognitoCredentials.mockResolvedValue([
+      listedClient,
+      { ...otherClient, clientName: 'test client' }
+    ])
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(204)
+  })
+
+  it('returns a 409 error without purging when the stored name is out of date', async () => {
+    cognitoClient.allCognitoCredentials.mockResolvedValue([
+      { ...listedClient, clientName: 'Renamed Client' }
+    ])
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(409)
+    expect(message(response)).toBe(
+      "The stored client is out of date: its name doesn't match CDP"
+    )
+    expect(cognitoClient.purgeCognitoCredential).not.toHaveBeenCalled()
+  })
+
+  it('returns a 404 error without purging when the client is not stored', async () => {
+    clientService.findClient.mockResolvedValue(null)
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(404)
+    expect(message(response)).toBe(
+      `Client '${clientId}' not found for tenant service '${tenantServiceName}'`
+    )
+    expect(cognitoClient.allCognitoCredentials).not.toHaveBeenCalled()
+    expect(cognitoClient.purgeCognitoCredential).not.toHaveBeenCalled()
+  })
+
+  it('returns a 404 error without purging when the client is not in CDP', async () => {
+    cognitoClient.allCognitoCredentials.mockResolvedValue([otherClient])
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(404)
+    expect(message(response)).toBe(`Client '${clientId}' not found in CDP`)
+    expect(cognitoClient.purgeCognitoCredential).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['listing the clients fails', () => Promise.reject(new Error('Down'))],
+    ["CDP's list can't be read", () => Promise.resolve(undefined)],
+    [
+      'the client has no secrets in the list',
+      () => Promise.resolve([{ clientName: 'Test Client', clientId }])
+    ],
+    [
+      "a secret's creation date can't be read",
+      () =>
+        Promise.resolve([
+          {
+            ...listedClient,
+            secrets: [olderSecret, { id: 'secret-2', createdAt: 'yesterday' }]
+          }
+        ])
+    ]
+  ])('returns a 502 error without purging when %s', async (_, listClients) => {
+    cognitoClient.allCognitoCredentials.mockImplementation(listClients)
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(502)
+    expect(message(response)).toBe(
+      "Couldn't read the client's secrets from CDP, so no secret was removed"
+    )
+    expect(cognitoClient.purgeCognitoCredential).not.toHaveBeenCalled()
+  })
+
+  it('returns a 502 error saying nothing was removed when CDP refuses', async () => {
+    cognitoClient.purgeCognitoCredential.mockRejectedValue(
+      new MockCdpError('Refused', { outcomeUnknown: false })
+    )
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(502)
+    expect(message(response)).toBe(
+      'CDP refused the purge request, so no secret was removed'
+    )
+  })
+
+  it.each([
+    [
+      'the outcome is unknown',
+      () =>
+        Promise.reject(new MockCdpError('Timed out', { outcomeUnknown: true }))
+    ],
+    ['CDP succeeds without client details', () => Promise.resolve(undefined)]
+  ])(
+    'returns a 502 error saying it is safe to retry when %s',
+    async (_, purge) => {
+      cognitoClient.purgeCognitoCredential.mockImplementation(purge)
+
+      const response = await inject()
+
+      expect(response.statusCode).toBe(502)
+      expect(message(response)).toBe(
+        'Purge outcome unknown: the older secret may have been removed. It is safe to try again.'
+      )
+    }
+  )
+
+  it('returns a 404 error when Cognito skips the client', async () => {
+    cognitoClient.purgeCognitoCredential.mockResolvedValue([])
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(404)
+  })
+
+  it('returns a 409 error when CDP purges a different client with the stored name', async () => {
+    cognitoClient.purgeCognitoCredential.mockResolvedValue([
+      { clientName: 'Test Client', clientId: 'other_client_id' }
+    ])
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(409)
+    expect(message(response)).toBe(
+      'The stored client is out of date: its name belongs to a different client'
+    )
+  })
+
+  it('warns when CDP also purges other clients with the name', async () => {
+    cognitoClient.purgeCognitoCredential.mockResolvedValue([
+      { clientName: 'Test Client', clientId: 'other_client_id' },
+      purgedClient
+    ])
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(204)
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      `Purging client ${clientId} also purged 1 other client(s) with the same name`
+    )
+  })
+
+  it('returns a 500 error when an unexpected error is thrown', async () => {
+    cognitoClient.purgeCognitoCredential.mockRejectedValue(
+      new Error('Unexpected error')
+    )
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(500)
+  })
+
+  it('logs who requested the purge', async () => {
+    await inject()
+
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      `Old client secret purge requested by test for client ${clientId} of ${tenantServiceName}`
+    )
+  })
+
+  it.each([
+    ['tenantServiceName', '/clients/Not_A_Service/my_client_id/purge'],
+    ['clientId', `/clients/${tenantServiceName}/not.a.client/purge`]
+  ])('returns a 400 error for an invalid %s (%s)', async (_, invalidUrl) => {
+    const response = await server.inject({
+      method: 'POST',
+      url: invalidUrl,
+      auth
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(clientService.findClient).not.toHaveBeenCalled()
+    expect(cognitoClient.purgeCognitoCredential).not.toHaveBeenCalled()
+  })
+
+  it('returns a 401 error without credentials', async () => {
+    const response = await server.inject({ method: 'POST', url })
+
+    expect(response.statusCode).toBe(401)
+  })
+})
+
 describe('DELETE Clients', () => {
   let clientService
   let deleteCognitoCredential
@@ -919,7 +1206,8 @@ describe('Routes for a tenant service', () => {
     ['GET', '/clients/waste-movement-backend/my_client_id'],
     ['POST', '/clients/waste-movement-backend'],
     ['DELETE', '/clients/waste-movement-backend/my_client_id'],
-    ['POST', '/clients/waste-movement-backend/my_client_id/rotate']
+    ['POST', '/clients/waste-movement-backend/my_client_id/rotate'],
+    ['POST', '/clients/waste-movement-backend/my_client_id/purge']
   ])(
     'returns a 404 error naming a service it does not manage (%s %s)',
     async (method, url) => {
@@ -942,6 +1230,7 @@ describe('Routes for a tenant service', () => {
       expect(cognitoClient.allCognitoCredentials).not.toHaveBeenCalled()
       expect(cognitoClient.createCognitoCredential).not.toHaveBeenCalled()
       expect(cognitoClient.rotateCognitoCredential).not.toHaveBeenCalled()
+      expect(cognitoClient.purgeCognitoCredential).not.toHaveBeenCalled()
       expect(cognitoClient.deleteCognitoCredential).not.toHaveBeenCalled()
     }
   )

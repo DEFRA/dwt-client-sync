@@ -34,8 +34,10 @@ vi.mock('#/config.js', () => ({
       createClientsPath: '/create-clients/{service-name}',
       deleteClientsPath: '/delete-clients/{service_name}',
       rotateClientsPath: '/rotate-clients/{service-name}',
+      purgeClientsPath: '/purge-clients/{service-name}',
       rotateTimeoutMs: 5000,
       createTimeoutMs: 6000,
+      purgeTimeoutMs: 7000,
       protocol: 'https'
     }))
   }
@@ -53,6 +55,7 @@ const {
   allCognitoCredentials,
   createCognitoCredential,
   rotateCognitoCredential,
+  purgeCognitoCredential,
   deleteCognitoCredential,
   CdpError
 } = await import('./cognito-client.js')
@@ -627,6 +630,112 @@ describe('rotateCognitoCredential', () => {
 
     expect(error).toBeInstanceOf(CdpError)
     expect(error.outcomeUnknown).toBe(false)
+  })
+})
+
+describe('purgeCognitoCredential', () => {
+  const cutoff = '2026-10-16T06:25:07.342000+00:00'
+  const purgedCredentials = {
+    cognito_user_pool_id: 'eu-west-2_EXAMPLE01',
+    request_id: 'my_request_id',
+    tenant_service_name: 'my-service',
+    client_details: [
+      { client_name: 'my_client', client_id: 'client-789', client_secret: null }
+    ]
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    mockSign.mockImplementation(async (request) => ({
+      headers: { ...request.headers, Authorization: 'mocked-signature' },
+      body: request.body
+    }))
+  })
+
+  it('returns the purged clients', async () => {
+    mockPost.mockResolvedValue({
+      res: { statusCode: 200 },
+      payload: purgedCredentials
+    })
+
+    const result = await purgeCognitoCredential(
+      'my-service',
+      'my_client',
+      cutoff
+    )
+
+    expect(result).toStrictEqual([
+      { clientName: 'my_client', clientId: 'client-789', clientSecret: null }
+    ])
+    const [url, options] = mockPost.mock.calls[0]
+    expect(url).toBe('https://example.com/purge-clients/my-service')
+    expect(options.json).toBe(true)
+  })
+
+  it('signs the JSON body, with the cutoff, that it sends', async () => {
+    mockPost.mockResolvedValue({
+      res: { statusCode: 200 },
+      payload: purgedCredentials
+    })
+
+    await purgeCognitoCredential('my-service', 'my_client', cutoff)
+
+    const [requestToSign] = mockSign.mock.calls[0]
+    expect(requestToSign.method).toBe('POST')
+    expect(requestToSign.headers['content-type']).toBe('application/json')
+    expect(requestToSign.body).toBe(
+      JSON.stringify({ client_names: ['my_client'], creation_cutoff: cutoff })
+    )
+    const options = mockPost.mock.calls[0][1]
+    expect(options.payload).toBe(requestToSign.body)
+  })
+
+  it('sets a timeout and encodes the service name in the path', async () => {
+    mockPost.mockResolvedValue({
+      res: { statusCode: 200 },
+      payload: purgedCredentials
+    })
+
+    await purgeCognitoCredential('my service', 'my_client', cutoff)
+
+    const [url, options] = mockPost.mock.calls[0]
+    expect(url).toBe('https://example.com/purge-clients/my%20service')
+    expect(options.timeout).toBe(7000)
+  })
+
+  it('reports a known failure when CDP refuses the request', async () => {
+    mockPost.mockRejectedValue(
+      new Boom.Boom('Response Error: 400', {
+        statusCode: 400,
+        data: { isResponseError: true }
+      })
+    )
+
+    const error = await purgeCognitoCredential(
+      'my-service',
+      'my_client',
+      cutoff
+    ).catch((err) => err)
+
+    expect(error).toBeInstanceOf(CdpError)
+    expect(error.outcomeUnknown).toBe(false)
+    expect(error.message).toBe(
+      'Failed to purge Cognito credentials: Response Error: 400'
+    )
+  })
+
+  it('reports an unknown outcome when the request times out', async () => {
+    mockPost.mockRejectedValue(Boom.gatewayTimeout('Client request timeout'))
+
+    const error = await purgeCognitoCredential(
+      'my-service',
+      'my_client',
+      cutoff
+    ).catch((err) => err)
+
+    expect(error).toBeInstanceOf(CdpError)
+    expect(error.outcomeUnknown).toBe(true)
   })
 })
 

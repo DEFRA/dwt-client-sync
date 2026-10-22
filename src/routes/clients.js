@@ -13,6 +13,7 @@ import {
 import {
   createCognitoCredential,
   rotateCognitoCredential,
+  purgeCognitoCredential,
   CdpError,
   deleteCognitoCredential,
   allCognitoCredentials
@@ -31,6 +32,14 @@ const OUTCOME_UNKNOWN_MESSAGE =
 const CREATE_OUTCOME_UNKNOWN_MESSAGE =
   "Create outcome unknown: the client may have been created, but its secret couldn't be returned. Check the client, and rotate its secret if it exists."
 
+const SECRETS_UNREADABLE_MESSAGE =
+  "Couldn't read the client's secrets from CDP, so no secret was removed"
+
+// Purging is idempotent, and the newest secret is always kept, so a retry
+// can't leave the client without a secret
+const PURGE_OUTCOME_UNKNOWN_MESSAGE =
+  'Purge outcome unknown: the older secret may have been removed. It is safe to try again.'
+
 // CDP service names are lowercase kebab-case; Cognito client ids match [\w+]+
 const rotateParamsSchema = Joi.object({
   tenantServiceName: Joi.string()
@@ -42,6 +51,27 @@ const rotateParamsSchema = Joi.object({
 })
 
 const logger = createLogger()
+
+/**
+ * Finds a client's newest secret, by when it was created.
+ * @param {{ id: string, createdAt: string }[]} secrets
+ * @returns {{ id: string, createdAt: string } | undefined} undefined when a
+ * creation date can't be read
+ */
+function newestSecret(secrets) {
+  const dated = secrets.map((secret) => ({
+    secret,
+    time: Date.parse(secret.createdAt)
+  }))
+
+  if (dated.some(({ time }) => Number.isNaN(time))) {
+    return undefined
+  }
+
+  return dated.reduce((newest, next) =>
+    next.time > newest.time ? next : newest
+  ).secret
+}
 
 /**
  * @param {string} clientName
@@ -379,6 +409,167 @@ export const clients = [
           return err.outcomeUnknown
             ? Boom.badGateway(OUTCOME_UNKNOWN_MESSAGE)
             : Boom.badGateway('CDP refused the rotation request')
+        }
+
+        return Boom.internal()
+      }
+    }
+  },
+  {
+    method: 'POST',
+    path: '/clients/{tenantServiceName}/{clientId}/purge',
+    options: {
+      validate: {
+        params: rotateParamsSchema
+      },
+      pre: [checkTenantService],
+      cache: {
+        otherwise: 'no-store'
+      }
+    },
+    handler: async (request, h) => {
+      try {
+        const {
+          db,
+          auth,
+          params: { tenantServiceName, clientId }
+        } = request
+
+        logger.info(
+          `Old client secret purge requested by ${auth.credentials.username} for client ${clientId} of ${tenantServiceName}`
+        )
+
+        // Cognito purges by client name, which the stored client gives us
+        const client = await findClient(tenantServiceName, clientId, db)
+
+        if (!client) {
+          return clientNotFound(tenantServiceName, clientId)
+        }
+
+        // Only the list says how many secrets the client has
+        let cognitoClients
+        try {
+          cognitoClients = await allCognitoCredentials(tenantServiceName)
+        } catch (err) {
+          logger.error(`Listing clients before purge failed: ${err.message}`)
+        }
+
+        if (!cognitoClients) {
+          return Boom.badGateway(SECRETS_UNREADABLE_MESSAGE)
+        }
+
+        const cognitoClient = cognitoClients.find(
+          (listed) => listed.clientId === clientId
+        )
+
+        if (!cognitoClient) {
+          return Boom.notFound(`Client '${clientId}' not found in CDP`)
+        }
+
+        if (cognitoClient.clientName !== client.clientName) {
+          logger.error(
+            `Client ${clientId} is out of date: its name in Cognito has changed`
+          )
+          return Boom.conflict(
+            "The stored client is out of date: its name doesn't match CDP"
+          )
+        }
+
+        // Names aren't unique in Cognito, and CDP purges every client with
+        // the name, so a purge would also remove the other clients' secrets
+        const sharesName = cognitoClients.some(
+          (listed) =>
+            listed.clientName === client.clientName &&
+            listed.clientId !== clientId
+        )
+
+        if (sharesName) {
+          logger.error(
+            `Not purging client ${clientId}: another client has the same name`
+          )
+          return Boom.conflict(
+            `Another client is named '${client.clientName}', and CDP removes secrets by name, so no secret was removed`
+          )
+        }
+
+        const { secrets } = cognitoClient
+
+        if (!Array.isArray(secrets)) {
+          logger.error(`CDP's list has no secrets for client ${clientId}`)
+          return Boom.badGateway(SECRETS_UNREADABLE_MESSAGE)
+        }
+
+        // A client must always keep a secret
+        if (secrets.length < 2) {
+          return Boom.conflict(
+            `Client '${clientId}' has only one secret, so there is none to remove`
+          )
+        }
+
+        const newest = newestSecret(secrets)
+
+        if (!newest) {
+          logger.error(
+            `CDP's list has a secret for client ${clientId} with an unreadable creation date`
+          )
+          return Boom.badGateway(SECRETS_UNREADABLE_MESSAGE)
+        }
+
+        // CDP only removes secrets created before the cutoff, so if the
+        // client is rotated after we listed it, its new secret is kept
+        const purgedClients = await purgeCognitoCredential(
+          tenantServiceName,
+          client.clientName,
+          newest.createdAt
+        )
+
+        // A success response we can't read: CDP may still have purged
+        if (!Array.isArray(purgedClients)) {
+          logger.error(
+            `CDP's purge response for client ${clientId} has no client details`
+          )
+          return Boom.badGateway(PURGE_OUTCOME_UNKNOWN_MESSAGE)
+        }
+
+        // CDP skips clients it doesn't know, leaving nothing purged
+        if (purgedClients.length === 0) {
+          logger.error(`Cognito did not purge client ${clientId}`)
+          return Boom.notFound(`Client '${clientId}' not found in CDP`)
+        }
+
+        const otherPurgedClients = purgedClients.filter(
+          (purged) => purged.clientId !== clientId
+        )
+        if (otherPurgedClients.length > 0) {
+          logger.warn(
+            `Purging client ${clientId} also purged ${otherPurgedClients.length} other client(s) with the same name`
+          )
+        }
+
+        // CDP purged other clients with the stored name, but not this one
+        if (!purgedClients.some((purged) => purged.clientId === clientId)) {
+          logger.error(
+            `Client ${clientId} is out of date: its name belongs to a different client in Cognito`
+          )
+          return Boom.conflict(
+            'The stored client is out of date: its name belongs to a different client'
+          )
+        }
+
+        logger.info(
+          `Purged old client secrets for client ${clientId} of ${tenantServiceName}`
+        )
+
+        return h.response().code(204)
+      } catch (err) {
+        logger.error(err.message)
+
+        if (err instanceof CdpError) {
+          return err.outcomeUnknown
+            ? Boom.badGateway(PURGE_OUTCOME_UNKNOWN_MESSAGE)
+            : Boom.badGateway(
+                'CDP refused the purge request, so no secret was removed'
+              )
         }
 
         return Boom.internal()

@@ -197,6 +197,13 @@ export const config = convict({
         '/tenants/services/{service-name}/user-pool/rotate-client-credentials',
       env: 'COGNITO_ROTATE_CLIENTS_PATH'
     },
+    purgeClientsPath: {
+      doc: 'Path for the Cognito purge old client credentials endpoint',
+      format: String,
+      default:
+        '/tenants/services/{service-name}/user-pool/purge-old-client-credentials',
+      env: 'COGNITO_PURGE_CLIENTS_PATH'
+    },
     rotateTimeoutMs: {
       // Must be positive: Wreck treats a timeout of 0 as no timeout. Wreck
       // applies it to the request and to reading the response separately,
@@ -212,6 +219,13 @@ export const config = convict({
       format: 'positive-int',
       default: 10000,
       env: 'COGNITO_CREATE_TIMEOUT_MS'
+    },
+    purgeTimeoutMs: {
+      // Must be positive, as for rotateTimeoutMs
+      doc: 'Timeout in milliseconds for the Cognito purge old client credentials request',
+      format: 'positive-int',
+      default: 10000,
+      env: 'COGNITO_PURGE_TIMEOUT_MS'
     }
   }
 })

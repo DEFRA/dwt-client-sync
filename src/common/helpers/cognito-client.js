@@ -14,14 +14,16 @@ const {
   listClientsPath,
   createClientsPath,
   rotateClientsPath,
+  purgeClientsPath,
   deleteClientsPath,
   rotateTimeoutMs,
   createTimeoutMs,
+  purgeTimeoutMs,
   protocol
 } = config.get('cognito')
 
 /**
- * A failed create or rotate request. `outcomeUnknown` is true when CDP may
+ * A failed create, rotate or purge request. `outcomeUnknown` is true when CDP may
  * still have made the change (timeout, network error, 5xx or unreadable
  * response), and false when CDP refused the request (4xx), so nothing changed.
  */
@@ -396,6 +398,53 @@ async function rotateCognitoCredential(serviceName, clientName) {
   return toCognitoClients(payload)
 }
 
+/**
+ * Removes a client's older secrets, keeping its newest. CDP purges by name,
+ * so it acts on every client with that name.
+ * @param {string} serviceName
+ * @param {string} clientName
+ * @param {string} creationCutoff - Only secrets created before this ISO 8601
+ * date-time are removed
+ * @returns {Promise<CognitoClient[] | undefined>} Every client purged, without secrets
+ */
+async function purgeCognitoCredential(serviceName, clientName, creationCutoff) {
+  logger.info('Purging old Cognito credentials')
+
+  const path = purgeClientsPath.replace(
+    '{service-name}',
+    encodeURIComponent(serviceName)
+  )
+
+  const requestToSign = new HttpRequest({
+    method: 'POST',
+    protocol,
+    hostname: baseUrl,
+    path,
+    headers: {
+      host: baseUrl,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      client_names: [clientName],
+      creation_cutoff: creationCutoff
+    })
+  })
+
+  const signed = await signer.sign(requestToSign)
+
+  const uri = `${protocol}://${baseUrl}${path}`
+
+  logger.info(uri)
+
+  const payload = await postToCdp('purge', uri, signed, {
+    timeout: purgeTimeoutMs
+  })
+
+  logger.info('Successfully purged old Cognito credentials')
+
+  return toCognitoClients(payload)
+}
+
 async function deleteCognitoCredential(serviceName, clientName) {
   logger.info('Deleting Cognito credentials')
 
@@ -450,6 +499,7 @@ export {
   allCognitoCredentials,
   createCognitoCredential,
   rotateCognitoCredential,
+  purgeCognitoCredential,
   deleteCognitoCredential,
   CdpError
 }
