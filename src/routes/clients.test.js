@@ -857,23 +857,37 @@ describe('POST Clients purge', () => {
     }
   )
 
-  it('tells apart secrets created in the same millisecond by their microseconds', async () => {
-    const sameMillisecond = {
-      id: 'secret-1792131907342',
-      createdAt: '2026-10-16T06:25:07.342999+00:00'
+  it.each([
+    [
+      'secrets created in the same millisecond, by their microseconds',
+      { id: 'secret-a', createdAt: '2026-10-16T06:25:07.342999+00:00' },
+      { id: 'secret-b', createdAt: '2026-10-16T06:25:07.342000+00:00' }
+    ],
+    [
+      'a date without fractional seconds from a later one',
+      { id: 'secret-a', createdAt: '2026-10-16T06:25:07.000500+00:00' },
+      { id: 'secret-b', createdAt: '2026-10-16T06:25:07+00:00' }
+    ]
+  ])('tells apart %s', async (_, newer, older) => {
+    // In both orders, so neither the first nor the last secret wins a tie
+    for (const secrets of [
+      [newer, older],
+      [older, newer]
+    ]) {
+      cognitoClient.allCognitoCredentials.mockResolvedValue([
+        { ...listedClient, secrets }
+      ])
+      cognitoClient.purgeCognitoCredential.mockClear()
+
+      const response = await inject()
+
+      expect(response.statusCode).toBe(204)
+      expect(cognitoClient.purgeCognitoCredential).toHaveBeenCalledWith(
+        tenantServiceName,
+        'Test Client',
+        newer.createdAt
+      )
     }
-    cognitoClient.allCognitoCredentials.mockResolvedValue([
-      { ...listedClient, secrets: [sameMillisecond, olderSecret] }
-    ])
-
-    const response = await inject()
-
-    expect(response.statusCode).toBe(204)
-    expect(cognitoClient.purgeCognitoCredential).toHaveBeenCalledWith(
-      tenantServiceName,
-      'Test Client',
-      sameMillisecond.createdAt
-    )
   })
 
   it('compares creation dates in different time zones', async () => {
