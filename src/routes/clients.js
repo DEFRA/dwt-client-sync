@@ -53,43 +53,22 @@ const clientParamsSchema = Joi.object({
 const logger = createLogger()
 
 /**
- * The microseconds after the millisecond in an ISO 8601 date-time, which
- * Date.parse drops. CDP's dates have six decimal places.
- * @param {string} dateTime
- * @returns {number}
- */
-function microseconds(dateTime) {
-  const digits = /\.\d{3}(\d{1,3})/.exec(dateTime)?.[1] ?? ''
-  return Number(digits.padEnd(3, '0'))
-}
-
-/**
- * Finds a client's newest secret, by when it was created.
+ * Sorts a client's secrets newest first, by when they were created.
  * @param {{ id: string, createdAt: string }[]} secrets
- * @returns {{ id: string, createdAt: string } | undefined} undefined when a
- * creation date can't be read, or two secrets were created at the same time
+ * @returns {{ secret: { id: string, createdAt: string }, time: number }[] | undefined}
+ * undefined when a creation date can't be read
  */
-function newestSecret(secrets) {
+function newestFirst(secrets) {
   const dated = secrets.map((secret) => ({
     secret,
-    time: Date.parse(secret.createdAt),
-    microseconds: microseconds(secret.createdAt)
+    time: Date.parse(secret.createdAt)
   }))
 
   if (dated.some(({ time }) => Number.isNaN(time))) {
     return undefined
   }
 
-  const byAge = (a, b) => a.time - b.time || a.microseconds - b.microseconds
-  const [newest, nextNewest] = dated.sort((a, b) => byAge(b, a))
-
-  // Neither of two newest secrets is before the cutoff, so CDP would
-  // remove nothing
-  if (nextNewest && byAge(newest, nextNewest) === 0) {
-    return undefined
-  }
-
-  return newest.secret
+  return dated.sort((a, b) => b.time - a.time)
 }
 
 /**
@@ -527,14 +506,22 @@ export const clients = [
           )
         }
 
-        const newest = newestSecret(secrets)
+        const sorted = newestFirst(secrets)
 
-        if (!newest) {
+        if (!sorted) {
           logger.error(
-            `Couldn't tell which of client ${clientId}'s secrets is newest from their creation dates`
+            `CDP's list has a secret for client ${clientId} with an unreadable creation date`
           )
-          return Boom.badGateway(
-            "Couldn't tell which of the client's secrets is newest, so no secret was removed"
+          return Boom.badGateway(SECRETS_UNREADABLE_MESSAGE)
+        }
+
+        const [newest, nextNewest] = sorted
+
+        // Neither secret is created before the other, so CDP would remove
+        // nothing
+        if (newest.time === nextNewest.time) {
+          return Boom.conflict(
+            `Client '${clientId}' has two secrets created at the same time, so neither is older to remove`
           )
         }
 
@@ -544,7 +531,7 @@ export const clients = [
         const purgedClients = await purgeCognitoCredential(
           tenantServiceName,
           client.clientName,
-          newest.createdAt
+          newest.secret.createdAt
         )
 
         // A success response we can't read: CDP may still have purged

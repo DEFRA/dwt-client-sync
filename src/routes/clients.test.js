@@ -859,13 +859,13 @@ describe('POST Clients purge', () => {
 
   it.each([
     [
-      'secrets created in the same millisecond, by their microseconds',
-      { id: 'secret-a', createdAt: '2026-10-16T06:25:07.342999+00:00' },
+      'secrets created a millisecond apart',
+      { id: 'secret-a', createdAt: '2026-10-16T06:25:07.343000+00:00' },
       { id: 'secret-b', createdAt: '2026-10-16T06:25:07.342000+00:00' }
     ],
     [
       'a date without fractional seconds from a later one',
-      { id: 'secret-a', createdAt: '2026-10-16T06:25:07.000500+00:00' },
+      { id: 'secret-a', createdAt: '2026-10-16T06:25:07.001+00:00' },
       { id: 'secret-b', createdAt: '2026-10-16T06:25:07+00:00' }
     ]
   ])('tells apart %s', async (_, newer, older) => {
@@ -914,25 +914,44 @@ describe('POST Clients purge', () => {
     )
   })
 
+  // CDP's examples give milliseconds padded to six decimal places, so
+  // anything after the millisecond is ignored
   it.each([
-    [
-      'two secrets were created at the same time',
-      { ...olderSecret, id: 'secret-2' }
-    ],
-    [
-      "a secret's creation date can't be read",
-      { id: 'secret-2', createdAt: 'yesterday' }
-    ]
-  ])('returns a 502 error without purging when %s', async (_, secret) => {
+    ['the same time', '2026-10-16T06:25:07.342000+00:00'],
+    ['the same millisecond', '2026-10-16T06:25:07.342999+00:00']
+  ])(
+    'returns a 409 error without purging when two secrets were created at %s',
+    async (_, createdAt) => {
+      cognitoClient.allCognitoCredentials.mockResolvedValue([
+        {
+          ...listedClient,
+          secrets: [olderSecret, { id: 'secret-2', createdAt }]
+        }
+      ])
+
+      const response = await inject()
+
+      expect(response.statusCode).toBe(409)
+      expect(message(response)).toBe(
+        `Client '${clientId}' has two secrets created at the same time, so neither is older to remove`
+      )
+      expect(cognitoClient.purgeCognitoCredential).not.toHaveBeenCalled()
+    }
+  )
+
+  it("returns a 502 error without purging when a secret's creation date can't be read", async () => {
     cognitoClient.allCognitoCredentials.mockResolvedValue([
-      { ...listedClient, secrets: [olderSecret, secret] }
+      {
+        ...listedClient,
+        secrets: [olderSecret, { id: 'secret-2', createdAt: 'yesterday' }]
+      }
     ])
 
     const response = await inject()
 
     expect(response.statusCode).toBe(502)
     expect(message(response)).toBe(
-      "Couldn't tell which of the client's secrets is newest, so no secret was removed"
+      "Couldn't read the client's secrets from CDP, so no secret was removed"
     )
     expect(cognitoClient.purgeCognitoCredential).not.toHaveBeenCalled()
   })
