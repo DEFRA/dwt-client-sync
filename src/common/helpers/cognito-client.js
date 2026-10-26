@@ -87,6 +87,36 @@ function toCognitoClients(payload) {
   )
 }
 
+// Enough of an error response to see CDP's reason
+const maxLoggedBodyLength = 500
+
+/**
+ * Describes a CDP error response for the logs: CDP's request ID, which its
+ * docs ask us to quote when reporting a failure, and the response body, which
+ * holds its reason. Only used for error responses, which never hold secrets.
+ * @param {object} [headers]
+ * @param {unknown} [payload]
+ * @returns {string}
+ */
+function describeErrorResponse(headers, payload) {
+  const requestId = headers?.['x-amzn-requestid']
+  let body
+  if (Buffer.isBuffer(payload)) {
+    body = payload.toString()
+  } else if (typeof payload === 'string') {
+    body = payload
+  } else if (payload != null) {
+    body = JSON.stringify(payload)
+  }
+
+  return [
+    requestId && `request ID ${requestId}`,
+    body && `response: ${body.slice(0, maxLoggedBodyLength)}`
+  ]
+    .filter(Boolean)
+    .join(', ')
+}
+
 /**
  * Sends a signed POST to CDP, throwing a CdpError that says whether CDP may
  * still have acted if the request fails. The response can hold client
@@ -114,14 +144,21 @@ async function postToCdp(action, uri, signed, options = {}) {
       : undefined
     const refused = statusCode >= 400 && statusCode < 500
     const message = `Failed to ${action} Cognito credentials: ${err.message}`
-    logger.error(message)
+    const details = err.data?.isResponseError
+      ? describeErrorResponse(err.data.headers, err.data.payload)
+      : ''
+    logger.error(details ? `${message} (${details})` : message)
     throw new CdpError(message, { outcomeUnknown: !refused, cause: err })
   }
 
   const { statusCode } = response.res
   if (statusCode < 200 || statusCode >= 300) {
     const message = `Failed to ${action} Cognito credentials. Status code: ${statusCode}`
-    logger.error(message)
+    const details = describeErrorResponse(
+      response.res.headers,
+      response.payload
+    )
+    logger.error(details ? `${message} (${details})` : message)
     throw new CdpError(message, { outcomeUnknown: false })
   }
 
