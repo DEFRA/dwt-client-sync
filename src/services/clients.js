@@ -38,18 +38,40 @@ export function findClients(tenantServiceName, db) {
 }
 
 /**
- * Makes the stored clients for the given tenantServiceName match the given clients.
+ * Stores one client, replacing any stored client with the same id. Safe while
+ * a sync runs: see readStoredClients.
+ *
+ * @param {MongoDb} db - The db
+ * @param {ClientRecord} record - The client to store
+ */
+export async function saveClient(db, record) {
+  const { tenantServiceName, clientId } = record
+
+  await db
+    .collection(collectionName)
+    .replaceOne({ tenantServiceName, clientId }, record, { upsert: true })
+}
+
+/**
+ * Reads the stored clients for a sync. Sync must call this before it lists
+ * the clients from CDP:
+ * - Every record read here was saved after its client was created in CDP, so
+ *   the list includes it unless the client has since been deleted. This
+ *   assumes CDP lists a client as soon as it's created.
+ * - A record saved after this read isn't in it, so sync can't delete it.
+ *
+ * A client created and then deleted while a sync is running can be stored
+ * again until the next sync.
  *
  * @param {Logger} logger - The logger
  * @param {MongoDb} db - The db
- * @param {ClientRecord[]} incomingClients - Every client the service now has
  * @param {String} tenantServiceName - The tenant service name
+ *
+ * @returns {Promise<ClientRecord[]>} The stored clients
  */
-export async function store(logger, db, incomingClients, tenantServiceName) {
-  let existing
-
+export async function readStoredClients(logger, db, tenantServiceName) {
   try {
-    existing = await db
+    return await db
       .collection(collectionName)
       .find({ tenantServiceName }, { projection: { _id: 0 } })
       .toArray()
@@ -59,7 +81,24 @@ export async function store(logger, db, incomingClients, tenantServiceName) {
     )
     throw error
   }
+}
 
+/**
+ * Makes the stored clients for the given tenantServiceName match the given clients.
+ *
+ * @param {Logger} logger - The logger
+ * @param {MongoDb} db - The db
+ * @param {ClientRecord[]} incomingClients - Every client the service now has
+ * @param {String} tenantServiceName - The tenant service name
+ * @param {ClientRecord[]} existing - The stored clients, from readStoredClients
+ */
+export async function store(
+  logger,
+  db,
+  incomingClients,
+  tenantServiceName,
+  existing
+) {
   const existingByKey = new Map(existing.map((doc) => [doc.clientId, doc]))
   const incomingByKey = new Map(
     incomingClients.map((doc) => [doc.clientId, doc])
@@ -72,9 +111,14 @@ export async function store(logger, db, incomingClients, tenantServiceName) {
     const existingDoc = existingByKey.get(clientId)
 
     if (!existingDoc) {
-      // new:  insert
+      // new: upsert, as create may have saved it since the stored clients
+      // were read
       operations.push({
-        insertOne: { document: incomingDoc }
+        replaceOne: {
+          filter: { clientId, tenantServiceName },
+          replacement: incomingDoc,
+          upsert: true
+        }
       })
     } else if (!isDeepStrictEqual(existingDoc, incomingDoc)) {
       // changed:  update
@@ -107,7 +151,7 @@ export async function store(logger, db, incomingClients, tenantServiceName) {
       .bulkWrite(operations, { ordered: false })
 
     logger.info(
-      `Sync completed: ${result.insertedCount} inserted, ${result.modifiedCount} updated, ${result.deletedCount} deleted`
+      `Sync completed: ${result.upsertedCount} inserted, ${result.modifiedCount} updated, ${result.deletedCount} deleted`
     )
 
     return result

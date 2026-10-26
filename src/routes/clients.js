@@ -1,7 +1,7 @@
 import Boom from '@hapi/boom'
 import Joi from 'joi'
 import { clientSchema } from '#/common/helpers/validation.js'
-import { findClient, findClients } from '#/services/clients.js'
+import { findClient, findClients, saveClient } from '#/services/clients.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { managedServices } from '#/common/helpers/managed-services.js'
 import { sync } from '#/services/client-sync.js'
@@ -9,6 +9,7 @@ import { deleteClient } from '#/services/client-delete.js'
 import { purgeOldSecret } from '#/services/client-purge.js'
 import { PurgeOutcome } from '#/domain/client-secrets.js'
 import {
+  toClientRecord,
   toClientResponse,
   toClientCredentialsResponse
 } from '#/models/client-mapper.js'
@@ -31,7 +32,11 @@ const OUTCOME_UNKNOWN_MESSAGE =
 // CDP returns a new client's secret only once, and a retry is skipped as a
 // duplicate, so the caller can only get a secret by rotating
 const CREATE_OUTCOME_UNKNOWN_MESSAGE =
-  "Create outcome unknown: the client may have been created, but its secret couldn't be returned. Check the client, and rotate its secret if it exists."
+  "Create outcome unknown: the client may have been created, but its secret couldn't be returned. It can't be found or rotated here until the next sync (or POST /clients/sync). If it exists then, rotate its secret."
+
+// Returned after the client is saved, so the caller can rotate it straight away
+const CREATE_NO_SECRET_MESSAGE =
+  "The client was created, but CDP didn't return its secret. Rotate its secret to get one."
 
 // Purging is idempotent, and the newest secret is always kept, so a retry
 // can't leave the client without a secret
@@ -214,7 +219,6 @@ export const clients = [
       try {
         const {
           db,
-          locker,
           payload,
           params: { tenantServiceName }
         } = request
@@ -261,17 +265,6 @@ export const clients = [
           throw err
         }
 
-        // Sync
-        logger.info('Sync client called')
-        try {
-          await sync(db, locker)
-        } catch (err) {
-          // If credential creation succeeds but sync fails, log error, but still return 'success'
-          // Credential secrets cannot be retrieved later so must be returned
-          // Scheduled sync should fix the cache later
-          logger.error(`Sync failed with error: ${err.message}`)
-        }
-
         // A success response we can't read: CDP may still have created it
         if (!Array.isArray(createdClients)) {
           logger.error("CDP's create response has no client details")
@@ -287,9 +280,24 @@ export const clients = [
           (client) => client.clientName === payload.clientName
         )
 
-        if (!createdClient?.clientSecret) {
-          logger.error("CDP's create response has no secret for the client")
+        if (!createdClient?.clientId) {
+          logger.error("CDP's create response doesn't include the client")
           return Boom.badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE)
+        }
+
+        // Stored now, rather than at the next sync, so it can be found and
+        // rotated straight away
+        try {
+          await saveClient(db, toClientRecord(createdClient, tenantServiceName))
+        } catch (err) {
+          // A failed save doesn't stop the response. The next sync stores the
+          // client
+          logger.error(`Saving created client failed: ${err.message}`)
+        }
+
+        if (!createdClient.clientSecret) {
+          logger.error("CDP's create response has no secret for the client")
+          return Boom.badGateway(CREATE_NO_SECRET_MESSAGE)
         }
 
         // Only time the secret is available, so it must be returned
