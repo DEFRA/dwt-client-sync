@@ -775,15 +775,14 @@ describe('purgeCognitoCredential', () => {
     )
   })
 
-  it('marks a long reason as truncated', async () => {
+  it.each([
+    ['JSON without a message', { other: 'x' }],
+    ['a body that is not JSON', Buffer.from('<html>Bad gateway</html>')]
+  ])('logs no reason from %s', async (_, payload) => {
     mockPost.mockRejectedValue(
       new Boom.Boom('Response Error: 502', {
         statusCode: 502,
-        data: {
-          isResponseError: true,
-          headers: {},
-          payload: Buffer.from('x'.repeat(400))
-        }
+        data: { isResponseError: true, headers: {}, payload }
       })
     )
 
@@ -792,24 +791,7 @@ describe('purgeCognitoCredential', () => {
     )
 
     expect(logger.error).toHaveBeenCalledWith(
-      `Failed to purge Cognito credentials: Response Error: 502 (reason: ${'x'.repeat(300)}… [truncated])`
-    )
-  })
-
-  it('logs nothing else from a body without a reason', async () => {
-    mockPost.mockRejectedValue(
-      new Boom.Boom('Response Error: 400', {
-        statusCode: 400,
-        data: { isResponseError: true, headers: {}, payload: { other: 'x' } }
-      })
-    )
-
-    await purgeCognitoCredential('my-service', 'my_client', cutoff).catch(
-      () => {}
-    )
-
-    expect(logger.error).toHaveBeenCalledWith(
-      'Failed to purge Cognito credentials: Response Error: 400'
+      'Failed to purge Cognito credentials: Response Error: 502'
     )
   })
 
