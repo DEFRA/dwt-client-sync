@@ -57,6 +57,10 @@ const {
   CdpError
 } = await import('./cognito-client.js')
 
+// The logger the module created when it was imported
+const { createLogger } = await import('#/common/helpers/logging/logger.js')
+const logger = createLogger.mock.results[0].value
+
 describe('allCognitoCredentials', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -630,6 +634,10 @@ describe('rotateCognitoCredential', () => {
 
     expect(error).toBeInstanceOf(CdpError)
     expect(error.outcomeUnknown).toBe(false)
+    // An empty response leaves nothing to describe
+    expect(logger.error).toHaveBeenCalledWith(
+      'Failed to rotate Cognito credentials. Status code: 302'
+    )
   })
 })
 
@@ -725,6 +733,68 @@ describe('purgeCognitoCredential', () => {
     )
   })
 
+  it("logs CDP's request ID and reason when it refuses the request", async () => {
+    mockPost.mockRejectedValue(
+      new Boom.Boom('Response Error: 400 Bad Request', {
+        statusCode: 400,
+        data: {
+          isResponseError: true,
+          headers: { 'x-amzn-requestid': 'my-request-id' },
+          payload: { message: 'Invalid request body' }
+        }
+      })
+    )
+
+    await purgeCognitoCredential('my-service', 'my_client', cutoff).catch(
+      () => {}
+    )
+
+    expect(logger.error).toHaveBeenCalledWith(
+      'Failed to purge Cognito credentials: Response Error: 400 Bad Request (request ID my-request-id, reason: Invalid request body)'
+    )
+  })
+
+  it("logs the Lambda's plain-text reason", async () => {
+    mockPost.mockRejectedValue(
+      new Boom.Boom('Response Error: 400 Bad Request', {
+        statusCode: 400,
+        data: {
+          isResponseError: true,
+          headers: {},
+          payload: 'User pool my-service does not exist.'
+        }
+      })
+    )
+
+    await purgeCognitoCredential('my-service', 'my_client', cutoff).catch(
+      () => {}
+    )
+
+    expect(logger.error).toHaveBeenCalledWith(
+      'Failed to purge Cognito credentials: Response Error: 400 Bad Request (reason: User pool my-service does not exist.)'
+    )
+  })
+
+  it.each([
+    ['JSON without a message', { other: 'x' }],
+    ['a body that is not JSON', Buffer.from('<html>Bad gateway</html>')]
+  ])('logs no reason from %s', async (_, payload) => {
+    mockPost.mockRejectedValue(
+      new Boom.Boom('Response Error: 502', {
+        statusCode: 502,
+        data: { isResponseError: true, headers: {}, payload }
+      })
+    )
+
+    await purgeCognitoCredential('my-service', 'my_client', cutoff).catch(
+      () => {}
+    )
+
+    expect(logger.error).toHaveBeenCalledWith(
+      'Failed to purge Cognito credentials: Response Error: 502'
+    )
+  })
+
   it('reports an unknown outcome when the request times out', async () => {
     mockPost.mockRejectedValue(Boom.gatewayTimeout('Client request timeout'))
 
@@ -736,6 +806,10 @@ describe('purgeCognitoCredential', () => {
 
     expect(error).toBeInstanceOf(CdpError)
     expect(error.outcomeUnknown).toBe(true)
+    // There's no response to describe
+    expect(logger.error).toHaveBeenCalledWith(
+      'Failed to purge Cognito credentials: Client request timeout'
+    )
   })
 })
 

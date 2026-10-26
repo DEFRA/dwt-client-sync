@@ -88,6 +88,40 @@ function toCognitoClients(payload) {
 }
 
 /**
+ * CDP's reason for an error response: API Gateway sends { message }, and CDP's
+ * Lambda sends a plain string. Other bodies aren't logged, as they weren't
+ * written by CDP as an error message.
+ * @param {unknown} [payload]
+ * @returns {string | undefined}
+ */
+function errorReason(payload) {
+  if (typeof payload?.message === 'string') {
+    return payload.message
+  }
+  if (typeof payload === 'string') {
+    return payload
+  }
+  return undefined
+}
+
+/**
+ * Describes a CDP error response for the logs: CDP's request ID, which its
+ * docs ask us to quote when reporting a failure, and its reason. Only used for
+ * error responses, which never hold secrets.
+ * @param {object} [headers]
+ * @param {unknown} [payload]
+ * @returns {string}
+ */
+function describeErrorResponse(headers, payload) {
+  const requestId = headers?.['x-amzn-requestid']
+  const reason = errorReason(payload)
+
+  return [requestId && `request ID ${requestId}`, reason && `reason: ${reason}`]
+    .filter(Boolean)
+    .join(', ')
+}
+
+/**
  * Sends a signed POST to CDP, throwing a CdpError that says whether CDP may
  * still have acted if the request fails. The response can hold client
  * secrets, so it's never logged.
@@ -114,14 +148,21 @@ async function postToCdp(action, uri, signed, options = {}) {
       : undefined
     const refused = statusCode >= 400 && statusCode < 500
     const message = `Failed to ${action} Cognito credentials: ${err.message}`
-    logger.error(message)
+    const details = err.data?.isResponseError
+      ? describeErrorResponse(err.data.headers, err.data.payload)
+      : ''
+    logger.error(details ? `${message} (${details})` : message)
     throw new CdpError(message, { outcomeUnknown: !refused, cause: err })
   }
 
   const { statusCode } = response.res
   if (statusCode < 200 || statusCode >= 300) {
     const message = `Failed to ${action} Cognito credentials. Status code: ${statusCode}`
-    logger.error(message)
+    const details = describeErrorResponse(
+      response.res.headers,
+      response.payload
+    )
+    logger.error(details ? `${message} (${details})` : message)
     throw new CdpError(message, { outcomeUnknown: false })
   }
 
