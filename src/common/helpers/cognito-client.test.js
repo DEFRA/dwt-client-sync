@@ -750,18 +750,18 @@ describe('purgeCognitoCredential', () => {
     )
 
     expect(logger.error).toHaveBeenCalledWith(
-      'Failed to purge Cognito credentials: Response Error: 400 Bad Request (request ID my-request-id, response: {"message":"Invalid request body"})'
+      'Failed to purge Cognito credentials: Response Error: 400 Bad Request (request ID my-request-id, reason: Invalid request body)'
     )
   })
 
-  it("logs only the start of a long response, and a body that isn't JSON", async () => {
+  it("logs the Lambda's plain-text reason", async () => {
     mockPost.mockRejectedValue(
-      new Boom.Boom('Response Error: 500', {
-        statusCode: 500,
+      new Boom.Boom('Response Error: 400 Bad Request', {
+        statusCode: 400,
         data: {
           isResponseError: true,
           headers: {},
-          payload: Buffer.from('x'.repeat(600))
+          payload: 'User pool my-service does not exist.'
         }
       })
     )
@@ -771,7 +771,45 @@ describe('purgeCognitoCredential', () => {
     )
 
     expect(logger.error).toHaveBeenCalledWith(
-      `Failed to purge Cognito credentials: Response Error: 500 (response: ${'x'.repeat(500)})`
+      'Failed to purge Cognito credentials: Response Error: 400 Bad Request (reason: User pool my-service does not exist.)'
+    )
+  })
+
+  it('marks a long reason as truncated', async () => {
+    mockPost.mockRejectedValue(
+      new Boom.Boom('Response Error: 502', {
+        statusCode: 502,
+        data: {
+          isResponseError: true,
+          headers: {},
+          payload: Buffer.from('x'.repeat(400))
+        }
+      })
+    )
+
+    await purgeCognitoCredential('my-service', 'my_client', cutoff).catch(
+      () => {}
+    )
+
+    expect(logger.error).toHaveBeenCalledWith(
+      `Failed to purge Cognito credentials: Response Error: 502 (reason: ${'x'.repeat(300)}… [truncated])`
+    )
+  })
+
+  it('logs nothing else from a body without a reason', async () => {
+    mockPost.mockRejectedValue(
+      new Boom.Boom('Response Error: 400', {
+        statusCode: 400,
+        data: { isResponseError: true, headers: {}, payload: { other: 'x' } }
+      })
+    )
+
+    await purgeCognitoCredential('my-service', 'my_client', cutoff).catch(
+      () => {}
+    )
+
+    expect(logger.error).toHaveBeenCalledWith(
+      'Failed to purge Cognito credentials: Response Error: 400'
     )
   })
 

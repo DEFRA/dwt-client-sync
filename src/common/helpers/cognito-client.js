@@ -87,31 +87,48 @@ function toCognitoClients(payload) {
   )
 }
 
-// Enough of an error response to see CDP's reason
-const maxLoggedBodyLength = 500
+// CDP's reasons are a sentence or two; this only guards against a large
+// unexpected body, such as an HTML error page
+const maxLoggedReasonLength = 300
+
+/**
+ * CDP's reason for an error response. API Gateway sends { message }, and CDP's
+ * Lambda sends a plain string. Anything else is only logged if it's text.
+ * @param {unknown} [payload]
+ * @returns {string | undefined}
+ */
+function errorReason(payload) {
+  if (typeof payload?.message === 'string') {
+    return payload.message
+  }
+  if (typeof payload === 'string') {
+    return payload
+  }
+  if (Buffer.isBuffer(payload)) {
+    return payload.toString()
+  }
+  return undefined
+}
 
 /**
  * Describes a CDP error response for the logs: CDP's request ID, which its
- * docs ask us to quote when reporting a failure, and the response body, which
- * holds its reason. Only used for error responses, which never hold secrets.
+ * docs ask us to quote when reporting a failure, and its reason. Only used for
+ * error responses, which never hold secrets.
  * @param {object} [headers]
  * @param {unknown} [payload]
  * @returns {string}
  */
 function describeErrorResponse(headers, payload) {
   const requestId = headers?.['x-amzn-requestid']
-  let body
-  if (Buffer.isBuffer(payload)) {
-    body = payload.toString()
-  } else if (typeof payload === 'string') {
-    body = payload
-  } else if (payload != null) {
-    body = JSON.stringify(payload)
-  }
+  const reason = errorReason(payload)
+  const loggedReason =
+    reason?.length > maxLoggedReasonLength
+      ? `${reason.slice(0, maxLoggedReasonLength)}… [truncated]`
+      : reason
 
   return [
     requestId && `request ID ${requestId}`,
-    body && `response: ${body.slice(0, maxLoggedBodyLength)}`
+    loggedReason && `reason: ${loggedReason}`
   ]
     .filter(Boolean)
     .join(', ')
