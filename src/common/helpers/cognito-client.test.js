@@ -681,7 +681,7 @@ describe('purgeCognitoCredential', () => {
     expect(options.json).toBe(true)
   })
 
-  it('signs the JSON body, with the cutoff, that it sends', async () => {
+  it("signs the JSON body that it sends, with the cutoff in a format CDP's API Gateway accepts", async () => {
     mockPost.mockResolvedValue({
       res: { statusCode: 200 },
       payload: purgedCredentials
@@ -693,7 +693,10 @@ describe('purgeCognitoCredential', () => {
     expect(requestToSign.method).toBe('POST')
     expect(requestToSign.headers['content-type']).toBe('application/json')
     expect(requestToSign.body).toBe(
-      JSON.stringify({ client_names: ['my_client'], creation_cutoff: cutoff })
+      JSON.stringify({
+        client_names: ['my_client'],
+        creation_cutoff: '2026-10-16T06:25:07.342Z'
+      })
     )
     const options = mockPost.mock.calls[0][1]
     expect(options.payload).toBe(requestToSign.body)

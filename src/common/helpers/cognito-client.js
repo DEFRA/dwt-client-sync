@@ -473,7 +473,9 @@ async function purgeCognitoCredential(serviceName, clientName, creationCutoff) {
     },
     body: JSON.stringify({
       client_names: [clientName],
-      creation_cutoff: creationCutoff
+      // CDP's API Gateway rejects the six-digit fraction its own created_at
+      // uses, so this sends the standard ISO form (milliseconds and Z)
+      creation_cutoff: new Date(creationCutoff).toISOString()
     })
   })
 
