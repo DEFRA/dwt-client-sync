@@ -19,7 +19,8 @@ import {
   createCognitoCredential,
   rotateCognitoCredential,
   CdpError,
-  deleteCognitoCredential
+  deleteCognitoCredential,
+  getCognitoCredential
 } from '#/common/helpers/cognito-client.js'
 
 // A retry rotates again, and a client holds at most two secrets, so
@@ -276,14 +277,27 @@ export const clients = [
           return badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE, 'unknown')
         }
 
-        // Stored now, rather than at the next sync, so it can be found and
-        // rotated straight away
+        const saveCreatedClient = async (secrets) => {
+          try {
+            await saveClient(
+              db,
+              toClientRecord(createdClient, tenantServiceName, secrets)
+            )
+          } catch (err) {
+            logger.error(`Saving created client failed: ${err.message}`)
+          }
+        }
+
         try {
-          await saveClient(db, toClientRecord(createdClient, tenantServiceName))
+          // Fetch secret metadata not initially returned
+          const { secrets } = await getCognitoCredential(payload.serviceName, createdClient.clientId)
+          await saveCreatedClient(secrets)
         } catch (err) {
-          // A failed save doesn't stop the response. The next sync stores the
-          // client
-          logger.error(`Saving created client failed: ${err.message}`)
+          logger.error(`Failed to fetch credential metadata: ${err.message}`)
+          // If secret metadata can't be fetched
+          // Save as empty,
+          // Will be repopulated next sync.
+          await saveCreatedClient([])
         }
 
         if (!createdClient.clientSecret) {
@@ -419,6 +433,13 @@ export const clients = [
         logger.info(
           `Rotated client secret for client ${clientId} of ${tenantServiceName}`
         )
+
+        // Save the updated secrets to the database
+        try {
+          await saveClient(db, toClientRecord(rotatedClient, tenantServiceName))
+        } catch (err) {
+          logger.error(`Saving rotated client failed: ${err.message}`)
+        }
 
         // Only time the new secret is available, so it must be returned
         return h.response(toClientCredentialsResponse(rotatedClient))

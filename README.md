@@ -117,8 +117,12 @@ git config --global core.autocrlf false
 | Endpoint             | Description                    |
 | :------------------- | :----------------------------- |
 | `GET: /health`       | Health                         |
-| `GET: /example    `  | Example API (remove as needed) |
-| `GET: /example/<id>` | Example API (remove as needed) |
+| `GET: /clients/{tenantServiceName}` | List clients in pool         |
+| `GET: /clients/{tenantServiceName}/{clientId}` | Get a specific client     |
+| `POST: /clients/sync`   | Sync all clients              |
+| `POST: /clients/{tenantServiceName}/{clientId}/rotate` | Rotate client secret      |
+| `POST: /clients/{tenantServiceName}/{clientId}/purge`  | Purge old client secrets  |
+| `DELETE: /clients/{tenantServiceName}/{clientId}` | Delete a client               |
 
 ## Development helpers
 
