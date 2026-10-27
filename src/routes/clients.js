@@ -41,7 +41,7 @@ const CREATE_NO_SECRET_MESSAGE =
 // Purging is idempotent, and the newest secret is always kept, so a retry
 // can't leave the client without a secret
 const PURGE_OUTCOME_UNKNOWN_MESSAGE =
-  'Purge outcome unknown: the older secret may have been removed. It is safe to try again: if the client then has only one secret, the purge worked.'
+  'Purge outcome unknown: the older secret may have been removed. It is safe to try again.'
 
 // CDP service names are lowercase kebab-case; Cognito client ids match [\w+]+
 const clientParamsSchema = Joi.object({
@@ -87,7 +87,7 @@ function purgeError(outcome, { clientId, clientName }) {
       return Boom.notFound(`Client '${clientId}' not found in CDP`)
     case PurgeOutcome.NAME_REUSED:
       return Boom.conflict(
-        'The stored client is out of date: its name belongs to a different client'
+        "The stored client is out of date: its name belongs to a different client, and that client's older secrets may have been removed"
       )
     case PurgeOutcome.NAME_SHARED:
       return Boom.conflict(
@@ -205,7 +205,7 @@ export const clients = [
           params: { tenantServiceName }
         } = request
         // Names are unique ignoring case. Checked against our store, as
-        // listing CDP takes seconds a page; CDP still rejects an exact match
+        // listing CDP takes seconds a page; CDP still skips an existing name
         const storedClients = await findClients(tenantServiceName, db)
 
         if (isNameTaken(storedClients, payload.clientName)) {

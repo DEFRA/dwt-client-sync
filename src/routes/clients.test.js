@@ -879,7 +879,7 @@ describe('POST Clients purge', () => {
     [
       'NAME_REUSED',
       409,
-      'The stored client is out of date: its name belongs to a different client'
+      "The stored client is out of date: its name belongs to a different client, and that client's older secrets may have been removed"
     ],
     [
       'NAME_SHARED',
@@ -889,7 +889,7 @@ describe('POST Clients purge', () => {
     [
       'OUTCOME_UNKNOWN',
       502,
-      'Purge outcome unknown: the older secret may have been removed. It is safe to try again: if the client then has only one secret, the purge worked.'
+      'Purge outcome unknown: the older secret may have been removed. It is safe to try again.'
     ]
   ])('returns %s as a %i error', async (outcome, statusCode, expected) => {
     purgeService.purgeOldSecret.mockResolvedValue(PurgeOutcome[outcome])
@@ -934,7 +934,7 @@ describe('POST Clients purge', () => {
 
     expect(response.statusCode).toBe(502)
     expect(message(response)).toBe(
-      'Purge outcome unknown: the older secret may have been removed. It is safe to try again: if the client then has only one secret, the purge worked.'
+      'Purge outcome unknown: the older secret may have been removed. It is safe to try again.'
     )
   })
 

@@ -1,7 +1,7 @@
 /**
  * Client names must be unique ignoring case, so two providers can't end up
- * with names that differ only in case. CDP's own create only rejects an
- * exact match, and its docs don't say how its other actions compare names.
+ * with names that differ only in case. CDP's create skips a name that
+ * already exists, but its docs don't say whether it ignores case.
  */
 
 /**
