@@ -18,7 +18,9 @@ async function purgeOldSecret(db, tenantServiceName, client) {
   const { clientId } = client
 
   // CDP purges by name, so another client with this name could lose its
-  // secret too. Checked against our store, as listing CDP takes seconds a page
+  // secret too. Checked against our store, as listing CDP takes seconds a
+  // page, so a client created outside our service since the last sync is
+  // missed, and could lose its older secret
   const storedClients = await findClients(tenantServiceName, db)
 
   if (sharesName(storedClients, client)) {

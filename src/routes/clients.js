@@ -205,7 +205,9 @@ export const clients = [
           params: { tenantServiceName }
         } = request
         // Names are unique ignoring case. Checked against our store, as
-        // listing CDP takes seconds a page; CDP still skips an existing name
+        // listing CDP takes seconds a page, so a client created outside our
+        // service since the last sync is missed. CDP still skips an existing
+        // name
         const storedClients = await findClients(tenantServiceName, db)
 
         if (isNameTaken(storedClients, payload.clientName)) {
