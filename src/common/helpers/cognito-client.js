@@ -449,12 +449,10 @@ async function rotateCognitoCredential(serviceName, clientName) {
  * so it acts on every client with that name.
  * @param {string} serviceName
  * @param {string} clientName
- * @param {string} creationCutoff - Only secrets created before this ISO 8601
- * date-time are removed
  * @returns {Promise<CognitoClient[] | undefined>} Every client CDP processed,
  * without secrets
  */
-async function purgeCognitoCredential(serviceName, clientName, creationCutoff) {
+async function purgeCognitoCredential(serviceName, clientName) {
   logger.info('Purging old Cognito credentials')
 
   const path = purgeClientsPath.replace(
@@ -472,10 +470,7 @@ async function purgeCognitoCredential(serviceName, clientName, creationCutoff) {
       'content-type': 'application/json'
     },
     body: JSON.stringify({
-      client_names: [clientName],
-      // CDP's API Gateway rejects the six-digit fraction its own created_at
-      // uses, so this sends the standard ISO form (milliseconds and Z)
-      creation_cutoff: new Date(creationCutoff).toISOString()
+      client_names: [clientName]
     })
   })
 

@@ -642,7 +642,6 @@ describe('rotateCognitoCredential', () => {
 })
 
 describe('purgeCognitoCredential', () => {
-  const cutoff = '2026-10-16T06:25:07.342000+00:00'
   const purgedCredentials = {
     cognito_user_pool_id: 'eu-west-2_EXAMPLE01',
     request_id: 'my_request_id',
@@ -667,11 +666,7 @@ describe('purgeCognitoCredential', () => {
       payload: purgedCredentials
     })
 
-    const result = await purgeCognitoCredential(
-      'my-service',
-      'my_client',
-      cutoff
-    )
+    const result = await purgeCognitoCredential('my-service', 'my_client')
 
     expect(result).toStrictEqual([
       { clientName: 'my_client', clientId: 'client-789', clientSecret: null }
@@ -681,22 +676,19 @@ describe('purgeCognitoCredential', () => {
     expect(options.json).toBe(true)
   })
 
-  it("signs the JSON body that it sends, with the cutoff in a format CDP's API Gateway accepts", async () => {
+  it('signs the JSON body that it sends, without a cutoff', async () => {
     mockPost.mockResolvedValue({
       res: { statusCode: 200 },
       payload: purgedCredentials
     })
 
-    await purgeCognitoCredential('my-service', 'my_client', cutoff)
+    await purgeCognitoCredential('my-service', 'my_client')
 
     const [requestToSign] = mockSign.mock.calls[0]
     expect(requestToSign.method).toBe('POST')
     expect(requestToSign.headers['content-type']).toBe('application/json')
     expect(requestToSign.body).toBe(
-      JSON.stringify({
-        client_names: ['my_client'],
-        creation_cutoff: '2026-10-16T06:25:07.342Z'
-      })
+      JSON.stringify({ client_names: ['my_client'] })
     )
     const options = mockPost.mock.calls[0][1]
     expect(options.payload).toBe(requestToSign.body)
@@ -708,7 +700,7 @@ describe('purgeCognitoCredential', () => {
       payload: purgedCredentials
     })
 
-    await purgeCognitoCredential('my service', 'my_client', cutoff)
+    await purgeCognitoCredential('my service', 'my_client')
 
     const [url, options] = mockPost.mock.calls[0]
     expect(url).toBe('https://example.com/purge-clients/my%20service')
@@ -723,11 +715,9 @@ describe('purgeCognitoCredential', () => {
       })
     )
 
-    const error = await purgeCognitoCredential(
-      'my-service',
-      'my_client',
-      cutoff
-    ).catch((err) => err)
+    const error = await purgeCognitoCredential('my-service', 'my_client').catch(
+      (err) => err
+    )
 
     expect(error).toBeInstanceOf(CdpError)
     expect(error.outcomeUnknown).toBe(false)
@@ -748,9 +738,7 @@ describe('purgeCognitoCredential', () => {
       })
     )
 
-    await purgeCognitoCredential('my-service', 'my_client', cutoff).catch(
-      () => {}
-    )
+    await purgeCognitoCredential('my-service', 'my_client').catch(() => {})
 
     expect(logger.error).toHaveBeenCalledWith(
       'Failed to purge Cognito credentials: Response Error: 400 Bad Request (request ID my-request-id, reason: Invalid request body)'
@@ -769,9 +757,7 @@ describe('purgeCognitoCredential', () => {
       })
     )
 
-    await purgeCognitoCredential('my-service', 'my_client', cutoff).catch(
-      () => {}
-    )
+    await purgeCognitoCredential('my-service', 'my_client').catch(() => {})
 
     expect(logger.error).toHaveBeenCalledWith(
       'Failed to purge Cognito credentials: Response Error: 400 Bad Request (reason: User pool my-service does not exist.)'
@@ -789,9 +775,7 @@ describe('purgeCognitoCredential', () => {
       })
     )
 
-    await purgeCognitoCredential('my-service', 'my_client', cutoff).catch(
-      () => {}
-    )
+    await purgeCognitoCredential('my-service', 'my_client').catch(() => {})
 
     expect(logger.error).toHaveBeenCalledWith(
       'Failed to purge Cognito credentials: Response Error: 502'
@@ -801,11 +785,9 @@ describe('purgeCognitoCredential', () => {
   it('reports an unknown outcome when the request times out', async () => {
     mockPost.mockRejectedValue(Boom.gatewayTimeout('Client request timeout'))
 
-    const error = await purgeCognitoCredential(
-      'my-service',
-      'my_client',
-      cutoff
-    ).catch((err) => err)
+    const error = await purgeCognitoCredential('my-service', 'my_client').catch(
+      (err) => err
+    )
 
     expect(error).toBeInstanceOf(CdpError)
     expect(error.outcomeUnknown).toBe(true)
