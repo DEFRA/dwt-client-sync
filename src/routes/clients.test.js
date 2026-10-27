@@ -325,8 +325,8 @@ describe('POST Clients', () => {
       services: []
     })
     vi.spyOn(clientService, 'saveClient').mockResolvedValue()
+    vi.spyOn(clientService, 'findClients').mockResolvedValue([])
 
-    allCognitoCredentials.mockResolvedValue([])
     createCognitoCredential.mockResolvedValue([
       {
         clientName: 'goodName1-_.',
@@ -380,8 +380,8 @@ describe('POST Clients', () => {
     )
   })
 
-  it('returns a 409 error when a client name already exists (case-insensitive)', async () => {
-    allCognitoCredentials.mockResolvedValueOnce([
+  it('returns a 409 error when a stored client already has the name (case-insensitive)', async () => {
+    clientService.findClients.mockResolvedValueOnce([
       { clientName: 'Existing-Client', clientId: 'existing-id' }
     ])
 
@@ -402,6 +402,21 @@ describe('POST Clients', () => {
     expect(clientSyncService.sync).not.toHaveBeenCalled()
   })
 
+  it("checks names against the stored clients, not CDP's list", async () => {
+    await server.inject({
+      method: 'POST',
+      url: '/clients/waste-movement-external-api',
+      auth,
+      payload: { clientName: 'goodName1-_.' }
+    })
+
+    expect(clientService.findClients).toHaveBeenCalledWith(
+      'waste-movement-external-api',
+      expect.anything()
+    )
+    expect(allCognitoCredentials).not.toHaveBeenCalled()
+  })
+
   const createClient = () =>
     server.inject({
       method: 'POST',
@@ -417,26 +432,19 @@ describe('POST Clients', () => {
   const createNoSecretMessage =
     "The client was created, but CDP didn't return its secret. Rotate its secret to get one."
 
-  it.each([
-    ['returns no client details', () => Promise.resolve(undefined)],
-    ['fails', () => Promise.reject(new Error('Response Error: 500'))]
-  ])(
-    "returns a 502 error without creating the client when listing clients %s, so duplicates can't be checked",
-    async (_, listClients) => {
-      allCognitoCredentials.mockImplementationOnce(listClients)
+  it("returns a 500 error without creating the client when the stored clients can't be read", async () => {
+    clientService.findClients.mockRejectedValueOnce(new Error('Mongo down'))
 
-      const response = await createClient()
+    const response = await createClient()
 
-      expect(response.statusCode).toBe(502)
-      expect(JSON.parse(response.payload).message).toBe(
-        "Couldn't check the existing client names in CDP, so no client was created"
-      )
-      expect(createCognitoCredential).not.toHaveBeenCalled()
-    }
-  )
+    expect(response.statusCode).toBe(500)
+    expect(createCognitoCredential).not.toHaveBeenCalled()
+  })
 
-  it('ignores a listed client with no name when checking for duplicates', async () => {
-    allCognitoCredentials.mockResolvedValueOnce([{ clientId: 'nameless-id' }])
+  it('ignores a stored client with no name when checking for duplicates', async () => {
+    clientService.findClients.mockResolvedValueOnce([
+      { clientId: 'nameless-id' }
+    ])
 
     const response = await createClient()
 
@@ -860,6 +868,7 @@ describe('POST Clients purge', () => {
 
     expect(response.statusCode).toBe(204)
     expect(purgeService.purgeOldSecret).toHaveBeenCalledWith(
+      expect.anything(),
       tenantServiceName,
       storedClient
     )
@@ -867,11 +876,6 @@ describe('POST Clients purge', () => {
 
   it.each([
     ['NOT_IN_CDP', 404, `Client '${clientId}' not found in CDP`],
-    [
-      'NAME_OUT_OF_DATE',
-      409,
-      "The stored client is out of date: its name doesn't match CDP"
-    ],
     [
       'NAME_REUSED',
       409,
@@ -882,21 +886,6 @@ describe('POST Clients purge', () => {
       409,
       "Another client is named 'Test Client' (case insensitive), and CDP removes secrets by name, so no secret was removed"
     ],
-    [
-      'ONE_SECRET',
-      409,
-      `Client '${clientId}' has only one secret, so there is none to remove`
-    ],
-    [
-      'SAME_TIME',
-      409,
-      `Client '${clientId}' has two secrets created at the same time, so neither is older to remove`
-    ],
-    ...['LIST_UNREADABLE', 'NO_SECRETS', 'DATE_UNREADABLE'].map((outcome) => [
-      outcome,
-      502,
-      "Couldn't read the client's secrets from CDP, so no secret was removed"
-    ]),
     [
       'OUTCOME_UNKNOWN',
       502,

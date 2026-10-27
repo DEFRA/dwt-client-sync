@@ -2,6 +2,7 @@ import Boom from '@hapi/boom'
 import Joi from 'joi'
 import { clientSchema } from '#/common/helpers/validation.js'
 import { findClient, findClients, saveClient } from '#/services/clients.js'
+import { isNameTaken } from '#/domain/client-names.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { managedServices } from '#/common/helpers/managed-services.js'
 import { sync } from '#/services/client-sync.js'
@@ -17,8 +18,7 @@ import {
   createCognitoCredential,
   rotateCognitoCredential,
   CdpError,
-  deleteCognitoCredential,
-  allCognitoCredentials
+  deleteCognitoCredential
 } from '#/common/helpers/cognito-client.js'
 
 // A retry rotates again, and a client holds at most two secrets, so
@@ -85,10 +85,6 @@ function purgeError(outcome, { clientId, clientName }) {
   switch (outcome) {
     case PurgeOutcome.NOT_IN_CDP:
       return Boom.notFound(`Client '${clientId}' not found in CDP`)
-    case PurgeOutcome.NAME_OUT_OF_DATE:
-      return Boom.conflict(
-        "The stored client is out of date: its name doesn't match CDP"
-      )
     case PurgeOutcome.NAME_REUSED:
       return Boom.conflict(
         'The stored client is out of date: its name belongs to a different client'
@@ -96,20 +92,6 @@ function purgeError(outcome, { clientId, clientName }) {
     case PurgeOutcome.NAME_SHARED:
       return Boom.conflict(
         `Another client is named '${clientName}' (case insensitive), and CDP removes secrets by name, so no secret was removed`
-      )
-    case PurgeOutcome.ONE_SECRET:
-      return Boom.conflict(
-        `Client '${clientId}' has only one secret, so there is none to remove`
-      )
-    case PurgeOutcome.SAME_TIME:
-      return Boom.conflict(
-        `Client '${clientId}' has two secrets created at the same time, so neither is older to remove`
-      )
-    case PurgeOutcome.LIST_UNREADABLE:
-    case PurgeOutcome.NO_SECRETS:
-    case PurgeOutcome.DATE_UNREADABLE:
-      return Boom.badGateway(
-        "Couldn't read the client's secrets from CDP, so no secret was removed"
       )
     case PurgeOutcome.OUTCOME_UNKNOWN:
       return Boom.badGateway(PURGE_OUTCOME_UNKNOWN_MESSAGE)
@@ -222,28 +204,11 @@ export const clients = [
           payload,
           params: { tenantServiceName }
         } = request
-        // Check if a client with that name already exists
-        // Comparision is case insensitive
-        // e.g. client-name == Client-Name == cLieNt-NAmE
-        let existingClients
-        try {
-          existingClients = await allCognitoCredentials(tenantServiceName)
-        } catch (err) {
-          logger.error(`Listing clients before create failed: ${err.message}`)
-        }
+        // Names are unique ignoring case. Checked against our store, as
+        // listing CDP takes seconds a page; CDP still rejects an exact match
+        const storedClients = await findClients(tenantServiceName, db)
 
-        // Without the existing clients, a duplicate name can't be ruled out
-        if (!existingClients) {
-          return Boom.badGateway(
-            "Couldn't check the existing client names in CDP, so no client was created"
-          )
-        }
-
-        const requestedName = payload.clientName.toLowerCase()
-        const isDuplicate = existingClients.some(
-          (client) => client.clientName?.toLowerCase() === requestedName
-        )
-        if (isDuplicate) {
+        if (isNameTaken(storedClients, payload.clientName)) {
           return clientNameTaken(payload.clientName)
         }
 
@@ -470,7 +435,7 @@ export const clients = [
           return clientNotFound(tenantServiceName, clientId)
         }
 
-        const outcome = await purgeOldSecret(tenantServiceName, client)
+        const outcome = await purgeOldSecret(db, tenantServiceName, client)
 
         if (outcome !== PurgeOutcome.PURGED) {
           return purgeError(outcome, client)
