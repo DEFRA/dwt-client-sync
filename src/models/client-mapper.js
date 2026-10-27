@@ -10,33 +10,38 @@
  * @property {string} clientId
  * @property {string} clientName
  * @property {string} tenantServiceName
+ * @property {{ id: string, createdAt: string }[]} [secrets]
  *
  * @typedef {object} ClientResponse - A client as returned by the GET endpoints
  * @property {string} clientId
  * @property {string} clientName
  * @property {string} tenantServiceName
+ * @property {{ id: string, createdAt: string }[]} [secrets]
  *
  * @typedef {object} ClientCredentialsResponse - A client and its new secret, as returned by create and rotate
  * @property {string} clientId
  * @property {string} clientName
  * @property {string} clientSecret
- */
+ **/
 
 /**
  * @param {CognitoClient} client
  * @param {string} tenantServiceName
  * @returns {ClientRecord}
  */
-export function toClientRecord({ clientId, clientName }, tenantServiceName) {
-  return { clientId, clientName, tenantServiceName }
+export function toClientRecord(
+  { clientId, clientName, secrets = [] },
+  tenantServiceName
+) {
+  return { clientId, clientName, tenantServiceName, secrets }
 }
 
 /**
  * @param {ClientRecord} record
  * @returns {ClientResponse}
  */
-export function toClientResponse({ clientId, clientName, tenantServiceName }) {
-  return { clientId, clientName, tenantServiceName }
+export function toClientResponse({ clientId, clientName, tenantServiceName, secrets }) {
+  return { clientId, clientName, tenantServiceName, secrets }
 }
 
 /**
