@@ -195,6 +195,18 @@ export const config = convict({
         '/tenants/services/{service-name}/user-pool/rotate-client-credentials',
       env: 'COGNITO_ROTATE_CLIENTS_PATH'
     },
+    userPoolId: {
+      doc: "The user pool CDP keeps the synced service's clients in, read directly for client names",
+      format: String,
+      default: '',
+      env: 'COGNITO_USER_POOL_ID'
+    },
+    userPoolEndpoint: {
+      doc: 'Cognito endpoint for reading the user pool, such as a local Cognito. Unset uses AWS',
+      format: String,
+      default: '',
+      env: 'COGNITO_USER_POOL_ENDPOINT'
+    },
     purgeClientsPath: {
       doc: 'Path for the Cognito purge old client credentials endpoint',
       format: String,

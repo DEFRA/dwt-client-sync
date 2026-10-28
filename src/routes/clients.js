@@ -2,6 +2,7 @@ import Boom from '@hapi/boom'
 import Joi from 'joi'
 import { clientSchema } from '#/common/helpers/validation.js'
 import { findClient, findClients, saveClient } from '#/services/clients.js'
+import { listUserPoolClients } from '#/common/helpers/user-pool.js'
 import { isNameTaken } from '#/domain/client-names.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { managedServices } from '#/common/helpers/managed-services.js'
@@ -204,13 +205,10 @@ export const clients = [
           payload,
           params: { tenantServiceName }
         } = request
-        // Names are unique ignoring case. Checked against our store, as
-        // listing CDP takes seconds a page, so a client created outside our
-        // service since the last sync is missed. CDP still skips an existing
-        // name
-        const storedClients = await findClients(tenantServiceName, db)
+        // Names are unique ignoring case. CDP still skips an existing name
+        const poolClients = await listUserPoolClients()
 
-        if (isNameTaken(storedClients, payload.clientName)) {
+        if (isNameTaken(poolClients, payload.clientName)) {
           return clientNameTaken(payload.clientName)
         }
 
@@ -437,7 +435,7 @@ export const clients = [
           return clientNotFound(tenantServiceName, clientId)
         }
 
-        const outcome = await purgeOldSecret(db, tenantServiceName, client)
+        const outcome = await purgeOldSecret(tenantServiceName, client)
 
         if (outcome !== PurgeOutcome.PURGED) {
           return purgeError(outcome, client)

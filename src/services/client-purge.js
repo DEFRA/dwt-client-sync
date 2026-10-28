@@ -1,6 +1,6 @@
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { purgeCognitoCredential } from '#/common/helpers/cognito-client.js'
-import { findClients } from '#/services/clients.js'
+import { listUserPoolClients } from '#/common/helpers/user-pool.js'
 import { sharesName } from '#/domain/client-names.js'
 import { PurgeOutcome, purgeResult } from '#/domain/client-secrets.js'
 
@@ -9,21 +9,18 @@ const logger = createLogger()
 /**
  * Removes a stored client's older secrets in CDP, keeping its newest.
  * Throws a CdpError if CDP's purge request fails.
- * @param {object} db
  * @param {string} tenantServiceName
  * @param {{ clientId: string, clientName: string }} client - The stored client
  * @returns {Promise<string>} The PurgeOutcome
  */
-async function purgeOldSecret(db, tenantServiceName, client) {
+async function purgeOldSecret(tenantServiceName, client) {
   const { clientId } = client
 
   // CDP purges by name, so another client with this name could lose its
-  // secret too. Checked against our store, as listing CDP takes seconds a
-  // page, so a client created outside our service since the last sync is
-  // missed, and could lose its older secret
-  const storedClients = await findClients(tenantServiceName, db)
+  // secret too
+  const poolClients = await listUserPoolClients()
 
-  if (sharesName(storedClients, client)) {
+  if (sharesName(poolClients, client)) {
     logger.error(`Not purging client ${clientId}: ${PurgeOutcome.NAME_SHARED}`)
     return PurgeOutcome.NAME_SHARED
   }
