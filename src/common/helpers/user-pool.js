@@ -33,24 +33,25 @@ async function listUserPoolClients(tenantServiceName) {
     )
   }
 
-  const clients = []
-
   try {
-    for await (const page of paginateListUserPoolClients(
-      { client: cognito },
-      { UserPoolId: userPoolId, MaxResults: 60 }
-    )) {
-      for (const { ClientId, ClientName } of page.UserPoolClients ?? []) {
-        clients.push({ clientId: ClientId, clientName: ClientName })
-      }
-    }
+    const pages = await Array.fromAsync(
+      paginateListUserPoolClients(
+        { client: cognito },
+        { UserPoolId: userPoolId, MaxResults: 60 }
+      )
+    )
+
+    return pages.flatMap((page) =>
+      (page.UserPoolClients ?? []).map(({ ClientId, ClientName }) => ({
+        clientId: ClientId,
+        clientName: ClientName
+      }))
+    )
   } catch (err) {
     throw new Error(`Reading user pool ${userPoolId} failed: ${err.message}`, {
       cause: err
     })
   }
-
-  return clients
 }
 
 export { listUserPoolClients }
