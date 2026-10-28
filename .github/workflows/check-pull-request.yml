@@ -48,11 +48,13 @@ jobs:
 #          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   # Runs the UAT pack's client-sync tests against the shared stack, with
-  # dwt-client-sync built from this PR (see compose.integration.yml)
+  # dwt-client-sync built from this PR (see compose.integration.yml). The
+  # fake CDP keeps its clients in Floci, so the tests that sign in with a
+  # secret it returns (@Authentication) run too
   integration-tests:
     name: Run Integration Tests
     needs: pr-validator
     uses: DEFRA/digital-waste-tracking-uat/.github/workflows/integration-tests.yml@main
     with:
       compose-file: compose.integration.yml
-      test-script: test:integration:client-sync
+      test-script: test:uat:client-sync
