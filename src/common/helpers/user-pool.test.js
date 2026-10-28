@@ -14,6 +14,11 @@ vi.mock('@aws-sdk/client-cognito-identity-provider', () => ({
   paginateListUserPoolClients: (...args) => mockPages(...args)
 }))
 
+// Set here, so the tests don't depend on the shell's environment
+vi.stubEnv('AWS_REGION', 'eu-west-2')
+vi.stubEnv('COGNITO_USER_POOL_ID', 'eu-west-2_TEST')
+vi.stubEnv('COGNITO_USER_POOL_ENDPOINT', '')
+
 const { listUserPoolClients } = await import('./user-pool.js')
 
 async function* pages(...results) {
@@ -26,7 +31,7 @@ describe('listUserPoolClients', () => {
   })
 
   it("uses AWS's Cognito in the configured region when no endpoint is set", () => {
-    expect(clientConfigs[0]).toStrictEqual({ region: 'eu-west-1' })
+    expect(clientConfigs[0]).toStrictEqual({ region: 'eu-west-2' })
   })
 
   it('uses the configured endpoint, such as a local Cognito', async () => {
@@ -36,16 +41,16 @@ describe('listUserPoolClients', () => {
     try {
       await import('./user-pool.js')
     } finally {
-      vi.unstubAllEnvs()
+      vi.stubEnv('COGNITO_USER_POOL_ENDPOINT', '')
     }
 
     expect(clientConfigs.at(-1)).toStrictEqual({
-      region: 'eu-west-1',
+      region: 'eu-west-2',
       endpoint: 'http://floci:4566'
     })
   })
 
-  it('returns the id and name of every client on every page', async () => {
+  it('returns the id and name of every client on every page of the pool', async () => {
     mockPages.mockReturnValue(
       pages(
         {
@@ -63,7 +68,7 @@ describe('listUserPoolClients', () => {
     ])
     expect(mockPages).toHaveBeenCalledWith(
       { client: expect.anything() },
-      { UserPoolId: '', MaxResults: 60 }
+      { UserPoolId: 'eu-west-2_TEST', MaxResults: 60 }
     )
   })
 
@@ -73,7 +78,7 @@ describe('listUserPoolClients', () => {
     await expect(listUserPoolClients()).resolves.toStrictEqual([])
   })
 
-  it('passes on an error reading a page', async () => {
+  it('throws an error naming the pool when a page cannot be read', async () => {
     const err = new Error('Access denied')
     mockPages.mockReturnValue(
       (async function* () {
@@ -82,6 +87,9 @@ describe('listUserPoolClients', () => {
       })()
     )
 
-    await expect(listUserPoolClients()).rejects.toBe(err)
+    await expect(listUserPoolClients()).rejects.toMatchObject({
+      message: 'Reading user pool eu-west-2_TEST failed: Access denied',
+      cause: err
+    })
   })
 })

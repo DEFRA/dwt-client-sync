@@ -197,7 +197,12 @@ export const config = convict({
     },
     userPoolId: {
       doc: "The user pool CDP keeps the synced service's clients in, read directly for client names",
-      format: String,
+      format: (value) => {
+        // Without it every create and purge fails, so it must be set on CDP
+        if (typeof value !== 'string' || (isProduction && value === '')) {
+          throw new Error('must be set')
+        }
+      },
       default: '',
       env: 'COGNITO_USER_POOL_ID'
     },
