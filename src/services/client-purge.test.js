@@ -14,13 +14,13 @@ vi.mock('#/common/helpers/cognito-client.js', () => ({
   purgeCognitoCredential: vi.fn()
 }))
 
-vi.mock('#/common/helpers/user-pool.js', () => ({
-  listUserPoolClients: vi.fn()
+vi.mock('#/services/client-directory.js', () => ({
+  listClients: vi.fn()
 }))
 
 const { purgeCognitoCredential } =
   await import('#/common/helpers/cognito-client.js')
-const { listUserPoolClients } = await import('#/common/helpers/user-pool.js')
+const { listClients } = await import('#/services/client-directory.js')
 const { PurgeOutcome } = await import('#/domain/client-secrets.js')
 const { purgeOldSecret } = await import('./client-purge.js')
 
@@ -32,15 +32,15 @@ const otherClient = { clientId: 'other_client_id', clientName: 'Other Client' }
 describe('purgeOldSecret', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    listUserPoolClients.mockResolvedValue([client, otherClient])
+    listClients.mockResolvedValue([client, otherClient])
     purgeCognitoCredential.mockResolvedValue([client])
   })
 
-  it('purges by name, without a cutoff, after checking the user pool', async () => {
+  it('purges by name, without a cutoff, after checking the other clients', async () => {
     const outcome = await purgeOldSecret(tenantServiceName, client)
 
     expect(outcome).toBe(PurgeOutcome.PURGED)
-    expect(listUserPoolClients).toHaveBeenCalled()
+    expect(listClients).toHaveBeenCalledWith(tenantServiceName)
     expect(purgeCognitoCredential).toHaveBeenCalledWith(
       tenantServiceName,
       'Test Client'
@@ -48,9 +48,9 @@ describe('purgeOldSecret', () => {
   })
 
   it.each([['Test Client'], ['test CLIENT']])(
-    'does not purge when another user pool client is named %s',
+    'does not purge when another client is named %s',
     async (otherName) => {
-      listUserPoolClients.mockResolvedValue([
+      listClients.mockResolvedValue([
         client,
         { ...otherClient, clientName: otherName }
       ])
@@ -99,7 +99,7 @@ describe('purgeOldSecret', () => {
   })
 
   it.each([
-    ['reading the user pool', () => listUserPoolClients],
+    ['listing the clients', () => listClients],
     ['the purge request', () => purgeCognitoCredential]
   ])('passes on an error from %s', async (_, mock) => {
     const err = new Error('Failed')

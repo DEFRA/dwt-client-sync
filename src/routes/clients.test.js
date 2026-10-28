@@ -28,8 +28,8 @@ vi.mock('#/common/helpers/cognito-client.js', () => ({
   CdpError: MockCdpError
 }))
 
-vi.mock('#/common/helpers/user-pool.js', () => ({
-  listUserPoolClients: vi.fn().mockResolvedValue([])
+vi.mock('#/services/client-directory.js', () => ({
+  listClients: vi.fn().mockResolvedValue([])
 }))
 
 describe('Client Routes', () => {
@@ -308,11 +308,11 @@ describe('POST Clients', () => {
   let clientSyncService
   let clientService
   let allCognitoCredentials
-  let listUserPoolClients
+  let listClients
 
   beforeAll(async () => {
     clientService = await import('#/services/clients.js')
-    ;({ listUserPoolClients } = await import('#/common/helpers/user-pool.js'))
+    ;({ listClients } = await import('#/services/client-directory.js'))
     createCognitoCredential = (
       await import('#/common/helpers/cognito-client.js')
     ).createCognitoCredential
@@ -386,8 +386,8 @@ describe('POST Clients', () => {
     )
   })
 
-  it('returns a 409 error when a user pool client already has the name (case-insensitive)', async () => {
-    listUserPoolClients.mockResolvedValueOnce([
+  it('returns a 409 error when another client already has the name (case-insensitive)', async () => {
+    listClients.mockResolvedValueOnce([
       { clientName: 'Existing-Client', clientId: 'existing-id' }
     ])
 
@@ -408,7 +408,7 @@ describe('POST Clients', () => {
     expect(clientSyncService.sync).not.toHaveBeenCalled()
   })
 
-  it("checks names against the user pool, not CDP's list or the stored clients", async () => {
+  it("checks names against the client directory, not CDP's list or the stored clients", async () => {
     await server.inject({
       method: 'POST',
       url: '/clients/waste-movement-external-api',
@@ -416,7 +416,7 @@ describe('POST Clients', () => {
       payload: { clientName: 'goodName1-_.' }
     })
 
-    expect(listUserPoolClients).toHaveBeenCalled()
+    expect(listClients).toHaveBeenCalledWith('waste-movement-external-api')
     expect(allCognitoCredentials).not.toHaveBeenCalled()
     expect(clientService.findClients).not.toHaveBeenCalled()
   })
@@ -436,8 +436,8 @@ describe('POST Clients', () => {
   const createNoSecretMessage =
     "The client was created, but CDP didn't return its secret. Rotate its secret to get one."
 
-  it("returns a 500 error without creating the client when the user pool can't be read", async () => {
-    listUserPoolClients.mockRejectedValueOnce(new Error('Cognito down'))
+  it("returns a 500 error without creating the client when the clients can't be listed", async () => {
+    listClients.mockRejectedValueOnce(new Error('Cognito down'))
 
     const response = await createClient()
 
@@ -445,8 +445,8 @@ describe('POST Clients', () => {
     expect(createCognitoCredential).not.toHaveBeenCalled()
   })
 
-  it('ignores a user pool client with no name when checking for duplicates', async () => {
-    listUserPoolClients.mockResolvedValueOnce([{ clientId: 'nameless-id' }])
+  it('ignores a client with no name when checking for duplicates', async () => {
+    listClients.mockResolvedValueOnce([{ clientId: 'nameless-id' }])
 
     const response = await createClient()
 

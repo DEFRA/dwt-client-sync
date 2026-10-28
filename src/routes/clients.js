@@ -2,7 +2,7 @@ import Boom from '@hapi/boom'
 import Joi from 'joi'
 import { clientSchema } from '#/common/helpers/validation.js'
 import { findClient, findClients, saveClient } from '#/services/clients.js'
-import { listUserPoolClients } from '#/common/helpers/user-pool.js'
+import { listClients } from '#/services/client-directory.js'
 import { isNameTaken } from '#/domain/client-names.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { managedServices } from '#/common/helpers/managed-services.js'
@@ -206,9 +206,9 @@ export const clients = [
           params: { tenantServiceName }
         } = request
         // Names are unique ignoring case. CDP still skips an existing name
-        const poolClients = await listUserPoolClients()
+        const existingClients = await listClients(tenantServiceName)
 
-        if (isNameTaken(poolClients, payload.clientName)) {
+        if (isNameTaken(existingClients, payload.clientName)) {
           return clientNameTaken(payload.clientName)
         }
 

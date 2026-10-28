@@ -3,6 +3,7 @@ import {
   paginateListUserPoolClients
 } from '@aws-sdk/client-cognito-identity-provider'
 import { config } from '#/config.js'
+import { managedServices } from '#/common/helpers/managed-services.js'
 
 const { region, userPoolId, userPoolEndpoint } = config.get('cognito')
 
@@ -17,10 +18,21 @@ const cognito = new CognitoIdentityProviderClient({
 })
 
 /**
- * Lists every client in the user pool, by id and name, without secrets.
+ * Lists every client in a tenant service's user pool, by id and name, without
+ * secrets. Only one pool is configured, so it must be the only managed
+ * service's.
+ * @param {string} tenantServiceName
  * @returns {Promise<{ clientId: string, clientName: string }[]>}
  */
-async function listUserPoolClients() {
+async function listUserPoolClients(tenantServiceName) {
+  const services = managedServices()
+
+  if (services.length !== 1 || services[0] !== tenantServiceName) {
+    throw new Error(
+      `The user pool is only configured for a single managed service, so can't read ${tenantServiceName}'s clients`
+    )
+  }
+
   const clients = []
 
   try {
