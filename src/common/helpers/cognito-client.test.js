@@ -35,7 +35,8 @@ vi.mock('#/config.js', () => ({
       deleteClientsPath: '/delete-clients/{service_name}',
       rotateClientsPath: '/rotate-clients/{service-name}',
       purgeClientsPath: '/purge-clients/{service-name}',
-      fetchSingleClientPath: '/tenants/services/{service_name}/user-pool/clients/{client_id}/fetch-details',
+      fetchSingleClientPath:
+        '/tenants/services/{service_name}/user-pool/clients/{client_id}/fetch-details',
       protocol: 'https'
     }))
   }
@@ -963,7 +964,7 @@ describe('getCognitoCredential', () => {
     await getCognitoCredential('my-service', 'client-123')
 
     const [requestToSign] = mockSign.mock.calls[0]
-    expect(requestToSign.method).toBe('POST')
+    expect(requestToSign.method).toBe('GET')
     expect(requestToSign.path).toBe(
       '/tenants/services/my-service/user-pool/clients/client-123/fetch-details'
     )

@@ -173,7 +173,8 @@ export const config = convict({
     fetchSingleClientPath: {
       doc: 'Path for the Cognito fetch single client endpoint',
       format: String,
-      default: '/tenants/services/{service_name}/user-pool/clients/{client_id}/fetch-details',
+      default:
+        '/tenants/services/{service_name}/user-pool/clients/{client_id}/fetch-details',
       env: 'COGNITO_GET_SINGLE_CLIENT_PATH'
     },
     serviceSyncList: {

@@ -61,8 +61,14 @@ function removeOldestSecret(secrets) {
   }
 
   for (const secret of secrets) {
-    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}[+-][0-9]{2}:[0-9]{2}$/.test(secret.createdAt)) {
-      throw new Error(`a secret with a bad createdAt date was provided: '${secret.createdAt}'`)
+    if (
+      !/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}[+-][0-9]{2}:[0-9]{2}$/.test(
+        secret.createdAt
+      )
+    ) {
+      throw new Error(
+        `a secret with a bad createdAt date was provided: '${secret.createdAt}'`
+      )
     }
   }
 

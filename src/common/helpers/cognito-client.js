@@ -100,9 +100,7 @@ function toCognitoClients(payload) {
 
   const clients = clientDetails.map(toCognitoClient)
   // A client that isn't an object can't be read, so the page can't be trusted
-  return clients.some((client) => client === undefined)
-    ? undefined
-    : clients
+  return clients.some((client) => client === undefined) ? undefined : clients
 }
 
 /**
@@ -572,7 +570,7 @@ async function getCognitoCredential(serviceName, clientId) {
     .replace('{client_id}', encodeURIComponent(clientId))
 
   const requestToSign = new HttpRequest({
-    method: 'POST',
+    method: 'GET',
     protocol,
     hostname: baseUrl,
     path,
@@ -588,7 +586,7 @@ async function getCognitoCredential(serviceName, clientId) {
 
   logger.info(uri)
 
-  const { res, payload } = await Wreck.post(uri, {
+  const { res, payload } = await Wreck.get(uri, {
     headers: signed.headers,
     json: true,
     timeout: requestTimeoutMs
@@ -596,10 +594,7 @@ async function getCognitoCredential(serviceName, clientId) {
 
   const client = toCognitoClient(payload)
 
-  if (
-    res.statusCode < 200 ||
-    res.statusCode >= 300
-  ) {
+  if (res.statusCode < 200 || res.statusCode >= 300) {
     const message = `Failed to fetch Cognito client. Status code: ${res.statusCode}`
     logger.error(message)
     throw new Error(message)
