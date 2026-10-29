@@ -98,7 +98,11 @@ function toCognitoClients(payload) {
     return undefined
   }
 
-  return clientDetails.map(toCognitoClient).filter((client) => client !== undefined)
+  const clients = clientDetails.map(toCognitoClient)
+  // A client that isn't an object can't be read, so the page can't be trusted
+  return clients.some((client) => client === undefined)
+    ? undefined
+    : clients
 }
 
 /**

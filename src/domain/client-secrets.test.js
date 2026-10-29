@@ -50,10 +50,21 @@ describe('removeOldestSecret', () => {
     expect(removeOldestSecret(undefined)).toBeUndefined()
   })
 
-  it('fails when a secret does not have the correct iso date format', () => {
-    expect(removeOldestSecret([
-      { id: 'a', createdAt: '2026-01-16T06:25:07.342000+00:00' },
-      { id: 'b', createdAt: '2026-02-16' },
-    ])).toThrow("a secret with a bad createdAt date was provided: '2026-02-16'")
+  it.each([
+    ['only a date', '2026-02-16'],
+    ['no time', '2026-02-16T06:25:07'],
+    ['3 digit fraction', '2026-02-16T06:25:07.342'],
+    ['7 digit fraction', '2026-02-16T06:25:07.3420000'],
+    ['Z suffix', '2026-02-16T06:25:07.342000Z'],
+    ['offset without colon', '2026-02-16T06:25:07.342000+0000'],
+    ['no timezone', '2026-02-16T06:25:07.342000'],
+    ['garbage', 'not-a-date'],
+  ])('fails when a secret has a %s createdAt', (_, createdAt) => {
+    expect(() => {
+      removeOldestSecret([
+        { id: 'a', createdAt: '2026-01-16T06:25:07.342000+00:00' },
+        { id: 'b', createdAt },
+      ])
+    }).toThrow(`a secret with a bad createdAt date was provided: '${createdAt}'`)
   })
 })

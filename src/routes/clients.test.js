@@ -565,6 +565,7 @@ describe('POST Clients', () => {
     expect(clientService.saveClient).toHaveBeenCalledWith(expect.anything(), {
       clientId: 'my_client_id',
       clientName: 'goodName1-_.',
+      secrets: [],
       tenantServiceName: 'waste-movement-external-api'
     })
     expect(clientSyncService.sync).not.toHaveBeenCalled()
@@ -596,6 +597,7 @@ describe('POST Clients', () => {
     expect(JSON.parse(response.payload)).toStrictEqual({
       clientId: 'my_client_id',
       clientName: 'goodName1-_.',
+      secrets: [],
       tenantServiceName: 'waste-movement-external-api'
     })
     // Saving the same client twice leaves one record
