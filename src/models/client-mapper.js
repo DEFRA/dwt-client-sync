@@ -22,7 +22,7 @@
  * @property {string} clientId
  * @property {string} clientName
  * @property {string} clientSecret
- **/
+ */
 
 /**
  * @param {CognitoClient} client

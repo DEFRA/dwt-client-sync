@@ -122,11 +122,13 @@ describe('Software Provider sync', () => {
         {
           clientId: 'client-1',
           clientName: 'Client One',
+          secrets: [],
           tenantServiceName: 'service-one'
         },
         {
           clientId: 'client-2',
           clientName: 'Client Two',
+          secrets: [],
           tenantServiceName: 'service-one'
         }
       ],
