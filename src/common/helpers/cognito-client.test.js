@@ -35,6 +35,7 @@ vi.mock('#/config.js', () => ({
       deleteClientsPath: '/delete-clients/{service_name}',
       rotateClientsPath: '/rotate-clients/{service-name}',
       purgeClientsPath: '/purge-clients/{service-name}',
+      fetchSingleClientPath: '/tenants/services/{service_name}/user-pool/clients/{client_id}/fetch-details',
       protocol: 'https'
     }))
   }
@@ -50,6 +51,7 @@ vi.mock('#/common/helpers/logging/logger.js', () => ({
 
 const {
   allCognitoCredentials,
+  getCognitoCredential,
   createCognitoCredential,
   rotateCognitoCredential,
   purgeCognitoCredential,
@@ -908,6 +910,124 @@ describe('deleteCognitoCredential', () => {
         'Failed to delete Cognito credentials. Status code: 200'
       )
       expect(mockSign).toHaveBeenCalledTimes(1)
+    }
+  )
+})
+
+describe('getCognitoCredential', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    mockSign.mockImplementation(async (request) => ({
+      headers: { ...request.headers, Authorization: 'mocked-signature' }
+    }))
+  })
+
+  const clientDetails = () => ({
+    client_name: 'my_client',
+    client_id: 'client-123',
+    client_secret: 'my-secret'
+  })
+
+  it('returns the client successfully', async () => {
+    mockPost.mockResolvedValue({
+      res: { statusCode: 200 },
+      payload: clientDetails()
+    })
+
+    const result = await getCognitoCredential('my-service', 'client-123')
+
+    expect(result).toEqual({
+      clientName: 'my_client',
+      clientId: 'client-123',
+      clientSecret: 'my-secret'
+    })
+    expect(mockSign).toHaveBeenCalledTimes(1)
+    expect(mockPost).toHaveBeenCalledTimes(1)
+
+    const [url, options] = mockPost.mock.calls[0]
+    expect(url).toBe(
+      'https://example.com/tenants/services/my-service/user-pool/clients/client-123/fetch-details'
+    )
+    expect(options.json).toBe(true)
+    expect(options.timeout).toBe(120_000)
+    expect(options.payload).toBeUndefined()
+  })
+
+  it('signs a POST request with the client id in the path', async () => {
+    mockPost.mockResolvedValue({
+      res: { statusCode: 200 },
+      payload: clientDetails()
+    })
+
+    await getCognitoCredential('my-service', 'client-123')
+
+    const [requestToSign] = mockSign.mock.calls[0]
+    expect(requestToSign.method).toBe('POST')
+    expect(requestToSign.path).toBe(
+      '/tenants/services/my-service/user-pool/clients/client-123/fetch-details'
+    )
+    expect(requestToSign.headers['content-type']).toBe('application/json')
+    expect(requestToSign.headers.host).toBe('example.com')
+
+    const [url, options] = mockPost.mock.calls[0]
+    expect(url).toBe(
+      'https://example.com/tenants/services/my-service/user-pool/clients/client-123/fetch-details'
+    )
+    expect(options.headers.Authorization).toBe('mocked-signature')
+  })
+
+  it('encodes the service name and client id in the path', async () => {
+    mockPost.mockResolvedValue({
+      res: { statusCode: 200 },
+      payload: clientDetails()
+    })
+
+    await getCognitoCredential('my service', 'client/123')
+
+    const [url, options] = mockPost.mock.calls[0]
+    expect(url).toBe(
+      'https://example.com/tenants/services/my%20service/user-pool/clients/client%2F123/fetch-details'
+    )
+    expect(options.headers.Authorization).toBe('mocked-signature')
+  })
+
+  it('logs the uri before sending the request', async () => {
+    mockPost.mockResolvedValue({
+      res: { statusCode: 200 },
+      payload: clientDetails()
+    })
+
+    await getCognitoCredential('my-service', 'client-123')
+
+    expect(logger.info).toHaveBeenCalledWith(
+      'https://example.com/tenants/services/my-service/user-pool/clients/client-123/fetch-details'
+    )
+  })
+
+  it('throws an error when the backend returns a non-200 status', async () => {
+    mockPost.mockResolvedValue({
+      res: { statusCode: 500 },
+      payload: {}
+    })
+
+    await expect(
+      getCognitoCredential('my-service', 'client-123')
+    ).rejects.toThrow('Failed to fetch Cognito client. Status code: 500')
+    expect(mockSign).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([null, 'not a client'])(
+    'returns undefined when the backend succeeds but returns %o',
+    async (payload) => {
+      mockPost.mockResolvedValue({
+        res: { statusCode: 200 },
+        payload
+      })
+
+      const result = await getCognitoCredential('my-service', 'client-123')
+
+      expect(result).toBeUndefined()
     }
   )
 })
