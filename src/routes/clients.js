@@ -9,7 +9,7 @@ import { managedServices } from '#/common/helpers/managed-services.js'
 import { sync } from '#/services/client-sync.js'
 import { deleteClient } from '#/services/client-delete.js'
 import { purgeOldSecret } from '#/services/client-purge.js'
-import { PurgeOutcome } from '#/domain/client-secrets.js'
+import { PurgeOutcome, removeOldestSecret } from '#/domain/client-secrets.js'
 import {
   toClientRecord,
   toClientResponse,
@@ -512,6 +512,10 @@ export const clients = [
         if (outcome !== PurgeOutcome.PURGED) {
           return purgeError(outcome, client)
         }
+
+        // Purge oldest secret metadata from the cache too
+        const secrets = removeOldestSecret(client.secrets)
+        await saveClient(db, toClientRecord({ ...client, secrets }, tenantServiceName))
 
         return h.response().code(204)
       } catch (err) {
