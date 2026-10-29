@@ -544,7 +544,11 @@ describe('POST Clients', () => {
     const response = await createClient()
 
     expect(response.statusCode).toBe(502)
-    expect(JSON.parse(response.payload).message).toBe(createNoSecretMessage)
+    expect(JSON.parse(response.payload)).toMatchObject({
+      message: createNoSecretMessage,
+      outcome: 'success',
+      clientId: 'my_client_id'
+    })
   })
 
   it('tells clients not to store the response', async () => {

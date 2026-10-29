@@ -61,11 +61,12 @@ const logger = createLogger()
  * or `unknown`, as ECS's event.outcome), so a caller can record it
  * @param {string} message
  * @param {'success' | 'failure' | 'unknown'} outcome
+ * @param {{ clientId?: string }} [details] - Which client, when it's known
  * @returns {Boom.Boom}
  */
-function badGateway(message, outcome) {
+function badGateway(message, outcome, details = {}) {
   const error = Boom.badGateway(message)
-  error.output.payload.outcome = outcome
+  Object.assign(error.output.payload, details, { outcome })
   return error
 }
 
@@ -287,7 +288,9 @@ export const clients = [
 
         if (!createdClient.clientSecret) {
           logger.error("CDP's create response has no secret for the client")
-          return badGateway(CREATE_NO_SECRET_MESSAGE, 'success')
+          return badGateway(CREATE_NO_SECRET_MESSAGE, 'success', {
+            clientId: createdClient.clientId
+          })
         }
 
         // Only time the secret is available, so it must be returned
