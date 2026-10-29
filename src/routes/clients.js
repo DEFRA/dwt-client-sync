@@ -281,7 +281,7 @@ export const clients = [
           try {
             await saveClient(
               db,
-              toClientRecord(createdClient, tenantServiceName, secrets)
+              toClientRecord({ ...createdClient, secrets }, tenantServiceName)
             )
           } catch (err) {
             logger.error(`Saving created client failed: ${err.message}`)
@@ -290,7 +290,10 @@ export const clients = [
 
         try {
           // Fetch secret metadata that isn't initally returned
-          const { secrets } = await getCognitoCredential(tenantServiceName, createdClient.clientId)
+          const { secrets } = await getCognitoCredential(
+            tenantServiceName,
+            createdClient.clientId
+          )
           await trySaveCreatedClient(secrets)
         } catch (err) {
           logger.error(`Failed to fetch credential metadata: ${err.message}`)
@@ -434,12 +437,15 @@ export const clients = [
           `Rotated client secret for client ${clientId} of ${tenantServiceName}`
         )
 
-
         const trySaveRotatedClient = async (secrets) => {
           try {
             await saveClient(
               db,
-              toClientRecord(rotatedClient, tenantServiceName, secrets)
+              toClientRecord(
+                { ...rotatedClient, secrets },
+                tenantServiceName,
+                secrets
+              )
             )
           } catch (err) {
             logger.error(`Saving rotated client failed: ${err.message}`)
@@ -515,7 +521,10 @@ export const clients = [
 
         // Purge oldest secret metadata from the cache too
         const secrets = removeOldestSecret(client.secrets)
-        await saveClient(db, toClientRecord({ ...client, secrets }, tenantServiceName))
+        await saveClient(
+          db,
+          toClientRecord({ ...client, secrets }, tenantServiceName)
+        )
 
         return h.response().code(204)
       } catch (err) {

@@ -35,7 +35,8 @@ vi.mock('#/config.js', () => ({
       deleteClientsPath: '/delete-clients/{service_name}',
       rotateClientsPath: '/rotate-clients/{service-name}',
       purgeClientsPath: '/purge-clients/{service-name}',
-      fetchSingleClientPath: '/tenants/services/{service_name}/user-pool/clients/{client_id}/fetch-details',
+      fetchSingleClientPath:
+        '/tenants/services/{service_name}/user-pool/clients/{client_id}/fetch-details',
       protocol: 'https'
     }))
   }
@@ -930,7 +931,7 @@ describe('getCognitoCredential', () => {
   })
 
   it('returns the client successfully', async () => {
-    mockPost.mockResolvedValue({
+    mockGet.mockResolvedValue({
       res: { statusCode: 200 },
       payload: clientDetails()
     })
@@ -943,9 +944,9 @@ describe('getCognitoCredential', () => {
       clientSecret: 'my-secret'
     })
     expect(mockSign).toHaveBeenCalledTimes(1)
-    expect(mockPost).toHaveBeenCalledTimes(1)
+    expect(mockGet).toHaveBeenCalledTimes(1)
 
-    const [url, options] = mockPost.mock.calls[0]
+    const [url, options] = mockGet.mock.calls[0]
     expect(url).toBe(
       'https://example.com/tenants/services/my-service/user-pool/clients/client-123/fetch-details'
     )
@@ -954,8 +955,8 @@ describe('getCognitoCredential', () => {
     expect(options.payload).toBeUndefined()
   })
 
-  it('signs a POST request with the client id in the path', async () => {
-    mockPost.mockResolvedValue({
+  it('signs a GET request with the client id in the path', async () => {
+    mockGet.mockResolvedValue({
       res: { statusCode: 200 },
       payload: clientDetails()
     })
@@ -963,14 +964,14 @@ describe('getCognitoCredential', () => {
     await getCognitoCredential('my-service', 'client-123')
 
     const [requestToSign] = mockSign.mock.calls[0]
-    expect(requestToSign.method).toBe('POST')
+    expect(requestToSign.method).toBe('GET')
     expect(requestToSign.path).toBe(
       '/tenants/services/my-service/user-pool/clients/client-123/fetch-details'
     )
     expect(requestToSign.headers['content-type']).toBe('application/json')
     expect(requestToSign.headers.host).toBe('example.com')
 
-    const [url, options] = mockPost.mock.calls[0]
+    const [url, options] = mockGet.mock.calls[0]
     expect(url).toBe(
       'https://example.com/tenants/services/my-service/user-pool/clients/client-123/fetch-details'
     )
@@ -978,14 +979,14 @@ describe('getCognitoCredential', () => {
   })
 
   it('encodes the service name and client id in the path', async () => {
-    mockPost.mockResolvedValue({
+    mockGet.mockResolvedValue({
       res: { statusCode: 200 },
       payload: clientDetails()
     })
 
     await getCognitoCredential('my service', 'client/123')
 
-    const [url, options] = mockPost.mock.calls[0]
+    const [url, options] = mockGet.mock.calls[0]
     expect(url).toBe(
       'https://example.com/tenants/services/my%20service/user-pool/clients/client%2F123/fetch-details'
     )
@@ -993,7 +994,7 @@ describe('getCognitoCredential', () => {
   })
 
   it('logs the uri before sending the request', async () => {
-    mockPost.mockResolvedValue({
+    mockGet.mockResolvedValue({
       res: { statusCode: 200 },
       payload: clientDetails()
     })
@@ -1006,7 +1007,7 @@ describe('getCognitoCredential', () => {
   })
 
   it('throws an error when the backend returns a non-200 status', async () => {
-    mockPost.mockResolvedValue({
+    mockGet.mockResolvedValue({
       res: { statusCode: 500 },
       payload: {}
     })
@@ -1020,7 +1021,7 @@ describe('getCognitoCredential', () => {
   it.each([null, 'not a client'])(
     'returns undefined when the backend succeeds but returns %o',
     async (payload) => {
-      mockPost.mockResolvedValue({
+      mockGet.mockResolvedValue({
         res: { statusCode: 200 },
         payload
       })

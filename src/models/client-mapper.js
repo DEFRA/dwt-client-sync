@@ -10,7 +10,7 @@
  * @property {string} clientId
  * @property {string} clientName
  * @property {string} tenantServiceName
- * @property {{ id: string, createdAt: string }[]} [secrets]
+ * @property {{ id: string, createdAt: string }[]} [secrets] - secret metadata, does not contain actual secrets
  *
  * @typedef {object} ClientResponse - A client as returned by the GET endpoints
  * @property {string} clientId
@@ -40,7 +40,12 @@ export function toClientRecord(
  * @param {ClientRecord} record
  * @returns {ClientResponse}
  */
-export function toClientResponse({ clientId, clientName, tenantServiceName, secrets }) {
+export function toClientResponse({
+  clientId,
+  clientName,
+  tenantServiceName,
+  secrets
+}) {
   return { clientId, clientName, tenantServiceName, secrets }
 }
 
