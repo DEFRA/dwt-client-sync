@@ -14,17 +14,16 @@ vi.mock('#/common/helpers/cognito-client.js', () => ({
   purgeCognitoCredential: vi.fn()
 }))
 
-vi.mock('#/services/clients.js', () => ({
-  findClients: vi.fn()
+vi.mock('#/services/client-directory.js', () => ({
+  listClients: vi.fn()
 }))
 
 const { purgeCognitoCredential } =
   await import('#/common/helpers/cognito-client.js')
-const { findClients } = await import('#/services/clients.js')
+const { listClients } = await import('#/services/client-directory.js')
 const { PurgeOutcome } = await import('#/domain/client-secrets.js')
 const { purgeOldSecret } = await import('./client-purge.js')
 
-const db = {}
 const tenantServiceName = 'waste-movement-external-api'
 const clientId = 'my_client_id'
 const client = { clientId, clientName: 'Test Client' }
@@ -33,15 +32,15 @@ const otherClient = { clientId: 'other_client_id', clientName: 'Other Client' }
 describe('purgeOldSecret', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    findClients.mockResolvedValue([client, otherClient])
+    listClients.mockResolvedValue([client, otherClient])
     purgeCognitoCredential.mockResolvedValue([client])
   })
 
-  it('purges by name, without a cutoff, using the stored clients', async () => {
-    const outcome = await purgeOldSecret(db, tenantServiceName, client)
+  it('purges by name, without a cutoff, after checking the other clients', async () => {
+    const outcome = await purgeOldSecret(tenantServiceName, client)
 
     expect(outcome).toBe(PurgeOutcome.PURGED)
-    expect(findClients).toHaveBeenCalledWith(tenantServiceName, db)
+    expect(listClients).toHaveBeenCalledWith(tenantServiceName)
     expect(purgeCognitoCredential).toHaveBeenCalledWith(
       tenantServiceName,
       'Test Client'
@@ -49,14 +48,14 @@ describe('purgeOldSecret', () => {
   })
 
   it.each([['Test Client'], ['test CLIENT']])(
-    'does not purge when another stored client is named %s',
+    'does not purge when another client is named %s',
     async (otherName) => {
-      findClients.mockResolvedValue([
+      listClients.mockResolvedValue([
         client,
         { ...otherClient, clientName: otherName }
       ])
 
-      const outcome = await purgeOldSecret(db, tenantServiceName, client)
+      const outcome = await purgeOldSecret(tenantServiceName, client)
 
       expect(outcome).toBe(PurgeOutcome.NAME_SHARED)
       expect(purgeCognitoCredential).not.toHaveBeenCalled()
@@ -69,7 +68,7 @@ describe('purgeOldSecret', () => {
   it("returns and logs the outcome of CDP's response", async () => {
     purgeCognitoCredential.mockResolvedValue([])
 
-    const outcome = await purgeOldSecret(db, tenantServiceName, client)
+    const outcome = await purgeOldSecret(tenantServiceName, client)
 
     expect(outcome).toBe(PurgeOutcome.NOT_IN_CDP)
     expect(mockLogger.error).toHaveBeenCalledWith(
@@ -83,7 +82,7 @@ describe('purgeOldSecret', () => {
       client
     ])
 
-    const outcome = await purgeOldSecret(db, tenantServiceName, client)
+    const outcome = await purgeOldSecret(tenantServiceName, client)
 
     expect(outcome).toBe(PurgeOutcome.PURGED)
     expect(mockLogger.error).toHaveBeenCalledWith(
@@ -92,7 +91,7 @@ describe('purgeOldSecret', () => {
   })
 
   it('logs a successful purge', async () => {
-    await purgeOldSecret(db, tenantServiceName, client)
+    await purgeOldSecret(tenantServiceName, client)
 
     expect(mockLogger.info).toHaveBeenCalledWith(
       `Purged old client secrets for client ${clientId} of ${tenantServiceName}`
@@ -100,14 +99,12 @@ describe('purgeOldSecret', () => {
   })
 
   it.each([
-    ['reading the stored clients', () => findClients],
+    ['listing the clients', () => listClients],
     ['the purge request', () => purgeCognitoCredential]
   ])('passes on an error from %s', async (_, mock) => {
     const err = new Error('Failed')
     mock().mockRejectedValue(err)
 
-    await expect(purgeOldSecret(db, tenantServiceName, client)).rejects.toBe(
-      err
-    )
+    await expect(purgeOldSecret(tenantServiceName, client)).rejects.toBe(err)
   })
 })
