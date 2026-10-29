@@ -57,6 +57,31 @@ const clientParamsSchema = Joi.object({
 const logger = createLogger()
 
 /**
+ * A 502, saying whether the requested change happened (`success`, `failure`
+ * or `unknown`, as ECS's event.outcome), so a caller can record it
+ * @param {string} message
+ * @param {'success' | 'failure' | 'unknown'} outcome
+ * @returns {Boom.Boom}
+ */
+function badGateway(message, outcome) {
+  const error = Boom.badGateway(message)
+  error.output.payload.outcome = outcome
+  return error
+}
+
+/**
+ * @param {CdpError} err
+ * @param {string} outcomeUnknownMessage
+ * @param {string} refusedMessage
+ * @returns {Boom.Boom} A 502 saying whether CDP may have made the change
+ */
+function cdpFailed(err, outcomeUnknownMessage, refusedMessage) {
+  return err.outcomeUnknown
+    ? badGateway(outcomeUnknownMessage, 'unknown')
+    : badGateway(refusedMessage, 'failure')
+}
+
+/**
  * @param {string} clientName
  * @returns {Boom.Boom} A 409 naming the client
  */
@@ -95,7 +120,7 @@ function purgeError(outcome, { clientId, clientName }) {
         `Another client is named '${clientName}' (case insensitive), and CDP removes secrets by name, so no secret was removed`
       )
     case PurgeOutcome.OUTCOME_UNKNOWN:
-      return Boom.badGateway(PURGE_OUTCOME_UNKNOWN_MESSAGE)
+      return badGateway(PURGE_OUTCOME_UNKNOWN_MESSAGE, 'unknown')
     default:
       throw new Error(`Unknown purge outcome: ${outcome}`)
   }
@@ -221,11 +246,11 @@ export const clients = [
           )
         } catch (err) {
           if (err instanceof CdpError) {
-            return err.outcomeUnknown
-              ? Boom.badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE)
-              : Boom.badGateway(
-                  'CDP refused the create request, so no client was created'
-                )
+            return cdpFailed(
+              err,
+              CREATE_OUTCOME_UNKNOWN_MESSAGE,
+              'CDP refused the create request, so no client was created'
+            )
           }
           throw err
         }
@@ -233,7 +258,7 @@ export const clients = [
         // A success response we can't read: CDP may still have created it
         if (!Array.isArray(createdClients)) {
           logger.error("CDP's create response has no client details")
-          return Boom.badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE)
+          return badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE, 'unknown')
         }
 
         // CDP skips names that already exist, so nothing was created
@@ -247,7 +272,7 @@ export const clients = [
 
         if (!createdClient?.clientId) {
           logger.error("CDP's create response doesn't include the client")
-          return Boom.badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE)
+          return badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE, 'unknown')
         }
 
         // Stored now, rather than at the next sync, so it can be found and
@@ -262,7 +287,7 @@ export const clients = [
 
         if (!createdClient.clientSecret) {
           logger.error("CDP's create response has no secret for the client")
-          return Boom.badGateway(CREATE_NO_SECRET_MESSAGE)
+          return badGateway(CREATE_NO_SECRET_MESSAGE, 'success')
         }
 
         // Only time the secret is available, so it must be returned
@@ -355,7 +380,7 @@ export const clients = [
           logger.error(
             `CDP's rotate response for client ${clientId} has no client details`
           )
-          return Boom.badGateway(OUTCOME_UNKNOWN_MESSAGE)
+          return badGateway(OUTCOME_UNKNOWN_MESSAGE, 'unknown')
         }
 
         // CDP skips clients it doesn't know, leaving nothing rotated
@@ -398,9 +423,11 @@ export const clients = [
         logger.error(err.message)
 
         if (err instanceof CdpError) {
-          return err.outcomeUnknown
-            ? Boom.badGateway(OUTCOME_UNKNOWN_MESSAGE)
-            : Boom.badGateway('CDP refused the rotation request')
+          return cdpFailed(
+            err,
+            OUTCOME_UNKNOWN_MESSAGE,
+            'CDP refused the rotation request'
+          )
         }
 
         return Boom.internal()
@@ -446,11 +473,11 @@ export const clients = [
         logger.error(err.message)
 
         if (err instanceof CdpError) {
-          return err.outcomeUnknown
-            ? Boom.badGateway(PURGE_OUTCOME_UNKNOWN_MESSAGE)
-            : Boom.badGateway(
-                'CDP refused the purge request, so no secret was removed'
-              )
+          return cdpFailed(
+            err,
+            PURGE_OUTCOME_UNKNOWN_MESSAGE,
+            'CDP refused the purge request, so no secret was removed'
+          )
         }
 
         return Boom.internal()

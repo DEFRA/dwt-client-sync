@@ -462,9 +462,10 @@ describe('POST Clients', () => {
     const response = await createClient()
 
     expect(response.statusCode).toBe(502)
-    expect(JSON.parse(response.payload).message).toBe(
-      'CDP refused the create request, so no client was created'
-    )
+    expect(JSON.parse(response.payload)).toMatchObject({
+      message: 'CDP refused the create request, so no client was created',
+      outcome: 'failure'
+    })
   })
 
   it.each([
@@ -472,12 +473,12 @@ describe('POST Clients', () => {
       'CDP may have created the client',
       () =>
         Promise.reject(new MockCdpError('Timed out', { outcomeUnknown: true })),
-      { saves: false, message: createOutcomeUnknownMessage }
+      { saves: false, message: createOutcomeUnknownMessage, outcome: 'unknown' }
     ],
     [
       "CDP's response has no client details",
       () => Promise.resolve(undefined),
-      { saves: false, message: createOutcomeUnknownMessage }
+      { saves: false, message: createOutcomeUnknownMessage, outcome: 'unknown' }
     ],
     [
       "CDP's response has no secret for the client",
@@ -485,7 +486,7 @@ describe('POST Clients', () => {
         Promise.resolve([
           { clientName: 'goodName1-_.', clientId: 'my_client_id' }
         ]),
-      { saves: true, message: createNoSecretMessage }
+      { saves: true, message: createNoSecretMessage, outcome: 'success' }
     ],
     [
       "CDP's response has a secret but no client id",
@@ -493,7 +494,7 @@ describe('POST Clients', () => {
         Promise.resolve([
           { clientName: 'goodName1-_.', clientSecret: 'my_client_secret' }
         ]),
-      { saves: false, message: createOutcomeUnknownMessage }
+      { saves: false, message: createOutcomeUnknownMessage, outcome: 'unknown' }
     ],
     [
       "CDP's response is for a different client",
@@ -505,18 +506,21 @@ describe('POST Clients', () => {
             clientSecret: 'other_secret'
           }
         ]),
-      { saves: false, message: createOutcomeUnknownMessage }
+      { saves: false, message: createOutcomeUnknownMessage, outcome: 'unknown' }
     ]
-  ])('returns a 502 error when %s', async (_, create, { saves, message }) => {
-    createCognitoCredential.mockImplementationOnce(create)
+  ])(
+    'returns a 502 error when %s',
+    async (_, create, { saves, message, outcome }) => {
+      createCognitoCredential.mockImplementationOnce(create)
 
-    const response = await createClient()
+      const response = await createClient()
 
-    expect(response.statusCode).toBe(502)
-    expect(JSON.parse(response.payload).message).toBe(message)
-    expect(clientService.saveClient).toHaveBeenCalledTimes(saves ? 1 : 0)
-    expect(clientSyncService.sync).not.toHaveBeenCalled()
-  })
+      expect(response.statusCode).toBe(502)
+      expect(JSON.parse(response.payload)).toMatchObject({ message, outcome })
+      expect(clientService.saveClient).toHaveBeenCalledTimes(saves ? 1 : 0)
+      expect(clientSyncService.sync).not.toHaveBeenCalled()
+    }
+  )
 
   it('returns a 409 error when CDP skips the name because it already exists', async () => {
     createCognitoCredential.mockResolvedValueOnce([])
@@ -740,9 +744,10 @@ describe('POST Clients rotate', () => {
     const response = await server.inject({ method: 'POST', url, auth })
 
     expect(response.statusCode).toBe(502)
-    expect(JSON.parse(response.payload).message).toBe(
-      'CDP refused the rotation request'
-    )
+    expect(JSON.parse(response.payload)).toMatchObject({
+      message: 'CDP refused the rotation request',
+      outcome: 'failure'
+    })
   })
 
   it('returns a 502 error warning against blind retries when the outcome is unknown', async () => {
@@ -753,9 +758,11 @@ describe('POST Clients rotate', () => {
     const response = await server.inject({ method: 'POST', url, auth })
 
     expect(response.statusCode).toBe(502)
-    expect(JSON.parse(response.payload).message).toBe(
-      'Rotation outcome unknown: a new secret may have been issued. Check the client before retrying.'
-    )
+    expect(JSON.parse(response.payload)).toMatchObject({
+      message:
+        'Rotation outcome unknown: a new secret may have been issued. Check the client before retrying.',
+      outcome: 'unknown'
+    })
   })
 
   it('returns a 502 error with an unknown outcome when CDP succeeds without client details', async () => {
@@ -764,9 +771,11 @@ describe('POST Clients rotate', () => {
     const response = await server.inject({ method: 'POST', url, auth })
 
     expect(response.statusCode).toBe(502)
-    expect(JSON.parse(response.payload).message).toBe(
-      'Rotation outcome unknown: a new secret may have been issued. Check the client before retrying.'
-    )
+    expect(JSON.parse(response.payload)).toMatchObject({
+      message:
+        'Rotation outcome unknown: a new secret may have been issued. Check the client before retrying.',
+      outcome: 'unknown'
+    })
   })
 
   it('returns a 409 error when CDP rotates a different client with the stored name', async () => {
@@ -899,6 +908,10 @@ describe('POST Clients purge', () => {
 
     expect(response.statusCode).toBe(statusCode)
     expect(message(response)).toBe(expected)
+    // Only a 502 says whether the change happened
+    expect(JSON.parse(response.payload).outcome).toBe(
+      statusCode === 502 ? 'unknown' : undefined
+    )
   })
 
   it('returns a 404 error without purging when the client is not stored', async () => {
@@ -924,6 +937,7 @@ describe('POST Clients purge', () => {
     expect(message(response)).toBe(
       'CDP refused the purge request, so no secret was removed'
     )
+    expect(JSON.parse(response.payload).outcome).toBe('failure')
   })
 
   it('returns a 502 error saying it is safe to retry when the outcome is unknown', async () => {
@@ -937,6 +951,7 @@ describe('POST Clients purge', () => {
     expect(message(response)).toBe(
       'Purge outcome unknown: the older secret may have been removed. It is safe to try again.'
     )
+    expect(JSON.parse(response.payload).outcome).toBe('unknown')
   })
 
   it('returns a 500 error for an outcome it does not know', async () => {
