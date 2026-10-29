@@ -277,7 +277,7 @@ export const clients = [
           return badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE, 'unknown')
         }
 
-        const saveCreatedClient = async (secrets) => {
+        const trySaveCreatedClient = async (secrets) => {
           try {
             await saveClient(
               db,
@@ -289,15 +289,15 @@ export const clients = [
         }
 
         try {
-          // Fetch secret metadata not initially returned
-          const { secrets } = await getCognitoCredential(payload.serviceName, createdClient.clientId)
-          await saveCreatedClient(secrets)
+          // Fetch secret metadata that isn't initally returned
+          const { secrets } = await getCognitoCredential(tenantServiceName, createdClient.clientId)
+          await trySaveCreatedClient(secrets)
         } catch (err) {
           logger.error(`Failed to fetch credential metadata: ${err.message}`)
           // If secret metadata can't be fetched
-          // Save as empty,
+          // Save secrets as empty,
           // Will be repopulated next sync.
-          await saveCreatedClient([])
+          await trySaveCreatedClient([])
         }
 
         if (!createdClient.clientSecret) {
@@ -434,11 +434,32 @@ export const clients = [
           `Rotated client secret for client ${clientId} of ${tenantServiceName}`
         )
 
+
+        const trySaveRotatedClient = async (secrets) => {
+          try {
+            await saveClient(
+              db,
+              toClientRecord(rotatedClient, tenantServiceName, secrets)
+            )
+          } catch (err) {
+            logger.error(`Saving rotated client failed: ${err.message}`)
+          }
+        }
+
         // Save the updated secrets to the database
         try {
-          await saveClient(db, toClientRecord(rotatedClient, tenantServiceName))
+          // Fetch secret metadata that isn't initially returned
+          const { secrets } = await getCognitoCredential(
+            tenantServiceName,
+            rotatedClient.clientId
+          )
+          await trySaveRotatedClient(secrets)
         } catch (err) {
           logger.error(`Saving rotated client failed: ${err.message}`)
+          // If secret metadata can't be fetched
+          // Save secrets as empty,
+          // Will be repopulated next sync.
+          trySaveRotatedClient([])
         }
 
         // Only time the new secret is available, so it must be returned
