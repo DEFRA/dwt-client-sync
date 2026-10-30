@@ -12,6 +12,7 @@ const {
   region,
   signerService,
   listClientsPath,
+  fetchSingleClientPath,
   createClientsPath,
   rotateClientsPath,
   purgeClientsPath,
@@ -51,6 +52,39 @@ class CdpError extends Error {
  */
 
 /**
+ * Maps a single client in a CDP credentials response (snake_case) to a
+ * Cognito client, dropping anything else CDP sends.
+ * @param {{ client_id?: string, client_name?: string, client_secret?: string,
+ *   client_secrets?: { id: string, created_at: string }[] }} details
+ * @returns {CognitoClient | undefined} undefined when the details can't be
+ * read, as they can't be mapped
+ */
+function toCognitoClient(details) {
+  if (!details || typeof details !== 'object') {
+    return undefined
+  }
+
+  const {
+    client_id: clientId,
+    client_name: clientName,
+    client_secret: clientSecret,
+    client_secrets: secrets
+  } = details
+
+  return {
+    clientId,
+    clientName,
+    ...(clientSecret !== undefined && { clientSecret }),
+    // The list returns each secret's id and creation date, never its value
+    ...(Array.isArray(secrets) && {
+      secrets: secrets
+        .filter((secret) => secret && typeof secret === 'object')
+        .map(({ id, created_at: createdAt }) => ({ id, createdAt }))
+    })
+  }
+}
+
+/**
  * Maps the clients in a CDP credentials response (snake_case) to Cognito
  * clients, dropping anything else CDP sends.
  * @param {{ client_details?: object[] }} payload
@@ -60,31 +94,13 @@ class CdpError extends Error {
 function toCognitoClients(payload) {
   const clientDetails = payload?.client_details
 
-  if (
-    !Array.isArray(clientDetails) ||
-    !clientDetails.every((details) => details && typeof details === 'object')
-  ) {
+  if (!Array.isArray(clientDetails)) {
     return undefined
   }
 
-  return clientDetails.map(
-    ({
-      client_id: clientId,
-      client_name: clientName,
-      client_secret: clientSecret,
-      client_secrets: secrets
-    }) => ({
-      clientId,
-      clientName,
-      ...(clientSecret !== undefined && { clientSecret }),
-      // The list returns each secret's id and creation date, never its value
-      ...(Array.isArray(secrets) && {
-        secrets: secrets
-          .filter((secret) => secret && typeof secret === 'object')
-          .map(({ id, created_at: createdAt }) => ({ id, createdAt }))
-      })
-    })
-  )
+  const clients = clientDetails.map(toCognitoClient)
+  // A client that isn't an object can't be read, so the page can't be trusted
+  return clients.some((client) => client === undefined) ? undefined : clients
 }
 
 /**
@@ -540,8 +556,58 @@ async function deleteCognitoCredential(serviceName, clientName) {
   logger.info('Successfully deleted Cognito credentials')
 }
 
+/**
+ * Fetches information about a single client by clientId.
+ *
+ * @param {string} serviceName
+ * @param {string} clientName
+ * @param {string} clientId
+ * @returns {Promise<CognitoClient | undefined>} The Cognito client with the given id
+ */
+async function getCognitoCredential(serviceName, clientId) {
+  const path = fetchSingleClientPath
+    .replace('{service_name}', encodeURIComponent(serviceName))
+    .replace('{client_id}', encodeURIComponent(clientId))
+
+  const requestToSign = new HttpRequest({
+    method: 'GET',
+    protocol,
+    hostname: baseUrl,
+    path,
+    headers: {
+      host: baseUrl,
+      'content-type': 'application/json'
+    }
+  })
+
+  const signed = await signer.sign(requestToSign)
+
+  const uri = `${protocol}://${baseUrl}${path}`
+
+  logger.info(uri)
+
+  const { res, payload } = await Wreck.get(uri, {
+    headers: signed.headers,
+    json: true,
+    timeout: requestTimeoutMs
+  })
+
+  const client = toCognitoClient(payload)
+
+  if (res.statusCode < 200 || res.statusCode >= 300) {
+    const message = `Failed to fetch Cognito client. Status code: ${res.statusCode}`
+    logger.error(message)
+    throw new Error(message)
+  }
+
+  logger.info('Successfully fetched one Cognito client')
+
+  return client
+}
+
 export {
   allCognitoCredentials,
+  getCognitoCredential,
   createCognitoCredential,
   rotateCognitoCredential,
   purgeCognitoCredential,

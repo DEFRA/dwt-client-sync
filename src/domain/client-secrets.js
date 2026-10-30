@@ -46,4 +46,38 @@ function purgeResult(purgedClients, clientId) {
   return { outcome: PurgeOutcome.PURGED, otherClientsPurged }
 }
 
-export { PurgeOutcome, purgeResult }
+/**
+ * Given a list of secrets, returns the list with the oldest removed.
+ * If there is only one secret in the list, return the list unchanged.
+ * @param {{ id: string, createdAt: string }[]} [secrets]
+ * @returns {{ id: string, createdAt: string }[]} The secrets without the oldest
+ */
+function removeOldestSecret(secrets) {
+  if (!Array.isArray(secrets) || secrets.length === 0) {
+    return secrets
+  }
+  if (secrets.length === 1) {
+    return secrets
+  }
+
+  for (const secret of secrets) {
+    if (
+      !/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}[+-][0-9]{2}:[0-9]{2}$/.test(
+        secret.createdAt
+      )
+    ) {
+      throw new Error(
+        `a secret with a bad createdAt date was provided: '${secret.createdAt}'`
+      )
+    }
+  }
+
+  const oldestCreatedAt = secrets.reduce(
+    (oldest, secret) => (secret.createdAt < oldest ? secret.createdAt : oldest),
+    secrets[0].createdAt
+  )
+
+  return secrets.filter(({ createdAt }) => createdAt !== oldestCreatedAt)
+}
+
+export { PurgeOutcome, purgeResult, removeOldestSecret }

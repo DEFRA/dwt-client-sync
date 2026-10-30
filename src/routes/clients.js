@@ -9,7 +9,7 @@ import { managedServices } from '#/common/helpers/managed-services.js'
 import { sync } from '#/services/client-sync.js'
 import { deleteClient } from '#/services/client-delete.js'
 import { purgeOldSecret } from '#/services/client-purge.js'
-import { PurgeOutcome } from '#/domain/client-secrets.js'
+import { PurgeOutcome, removeOldestSecret } from '#/domain/client-secrets.js'
 import {
   toClientRecord,
   toClientResponse,
@@ -19,7 +19,8 @@ import {
   createCognitoCredential,
   rotateCognitoCredential,
   CdpError,
-  deleteCognitoCredential
+  deleteCognitoCredential,
+  getCognitoCredential
 } from '#/common/helpers/cognito-client.js'
 
 // A retry rotates again, and a client holds at most two secrets, so
@@ -276,14 +277,30 @@ export const clients = [
           return badGateway(CREATE_OUTCOME_UNKNOWN_MESSAGE, 'unknown')
         }
 
-        // Stored now, rather than at the next sync, so it can be found and
-        // rotated straight away
+        const trySaveCreatedClient = async (secrets) => {
+          try {
+            await saveClient(
+              db,
+              toClientRecord({ ...createdClient, secrets }, tenantServiceName)
+            )
+          } catch (err) {
+            logger.error(`Saving created client failed: ${err.message}`)
+          }
+        }
+
         try {
-          await saveClient(db, toClientRecord(createdClient, tenantServiceName))
+          // Fetch secret metadata that isn't initally returned
+          const { secrets } = await getCognitoCredential(
+            tenantServiceName,
+            createdClient.clientId
+          )
+          await trySaveCreatedClient(secrets)
         } catch (err) {
-          // A failed save doesn't stop the response. The next sync stores the
-          // client
-          logger.error(`Saving created client failed: ${err.message}`)
+          logger.error(`Failed to fetch credential metadata: ${err.message}`)
+          // If secret metadata can't be fetched
+          // Save secrets as empty,
+          // Will be repopulated next sync.
+          await trySaveCreatedClient([])
         }
 
         if (!createdClient.clientSecret) {
@@ -420,6 +437,37 @@ export const clients = [
           `Rotated client secret for client ${clientId} of ${tenantServiceName}`
         )
 
+        const trySaveRotatedClient = async (secrets) => {
+          try {
+            await saveClient(
+              db,
+              toClientRecord(
+                { ...rotatedClient, secrets },
+                tenantServiceName,
+                secrets
+              )
+            )
+          } catch (err) {
+            logger.error(`Saving rotated client failed: ${err.message}`)
+          }
+        }
+
+        // Save the updated secrets to the database
+        try {
+          // Fetch secret metadata that isn't initially returned
+          const { secrets } = await getCognitoCredential(
+            tenantServiceName,
+            rotatedClient.clientId
+          )
+          await trySaveRotatedClient(secrets)
+        } catch (err) {
+          logger.error(`Saving rotated client failed: ${err.message}`)
+          // If secret metadata can't be fetched
+          // Save secrets as empty,
+          // Will be repopulated next sync.
+          trySaveRotatedClient([])
+        }
+
         // Only time the new secret is available, so it must be returned
         return h.response(toClientCredentialsResponse(rotatedClient))
       } catch (err) {
@@ -470,6 +518,13 @@ export const clients = [
         if (outcome !== PurgeOutcome.PURGED) {
           return purgeError(outcome, client)
         }
+
+        // Purge oldest secret metadata from the cache too
+        const secrets = removeOldestSecret(client.secrets)
+        await saveClient(
+          db,
+          toClientRecord({ ...client, secrets }, tenantServiceName)
+        )
 
         return h.response().code(204)
       } catch (err) {

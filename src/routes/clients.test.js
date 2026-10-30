@@ -25,6 +25,7 @@ vi.mock('#/common/helpers/cognito-client.js', () => ({
   purgeCognitoCredential: vi.fn(),
   deleteCognitoCredential: vi.fn(),
   deleteClient: vi.fn(),
+  getCognitoCredential: vi.fn(),
   CdpError: MockCdpError
 }))
 
@@ -309,6 +310,7 @@ describe('POST Clients', () => {
   let clientService
   let allCognitoCredentials
   let listClients
+  let getCognitoCredential
 
   beforeAll(async () => {
     clientService = await import('#/services/clients.js')
@@ -318,6 +320,8 @@ describe('POST Clients', () => {
     ).createCognitoCredential
     allCognitoCredentials = (await import('#/common/helpers/cognito-client.js'))
       .allCognitoCredentials
+    getCognitoCredential = (await import('#/common/helpers/cognito-client.js'))
+      .getCognitoCredential
     clientSyncService = await import('#/services/client-sync.js')
     const { createServer } = await import('#/server.js')
 
@@ -565,6 +569,7 @@ describe('POST Clients', () => {
     expect(clientService.saveClient).toHaveBeenCalledWith(expect.anything(), {
       clientId: 'my_client_id',
       clientName: 'goodName1-_.',
+      secrets: [],
       tenantServiceName: 'waste-movement-external-api'
     })
     expect(clientSyncService.sync).not.toHaveBeenCalled()
@@ -596,6 +601,7 @@ describe('POST Clients', () => {
     expect(JSON.parse(response.payload)).toStrictEqual({
       clientId: 'my_client_id',
       clientName: 'goodName1-_.',
+      secrets: [],
       tenantServiceName: 'waste-movement-external-api'
     })
     // Saving the same client twice leaves one record
@@ -624,6 +630,48 @@ describe('POST Clients', () => {
     expect(mockLogger.error).toHaveBeenCalledWith(
       'Saving created client failed: Mongo down'
     )
+  })
+
+  it('fetches secret metadata for the created client', async () => {
+    getCognitoCredential.mockResolvedValue({ secrets: [{ id: 'secret-1' }] })
+
+    const response = await createClient()
+
+    expect(response.statusCode).toBe(200)
+    expect(getCognitoCredential).toHaveBeenCalledWith(
+      'waste-movement-external-api',
+      'my_client_id'
+    )
+  })
+
+  it('saves the created client with the secrets from the credential metadata', async () => {
+    getCognitoCredential.mockResolvedValue({
+      secrets: [{ id: 'secret-1', createdAt: '2026-10-29T00:00:00Z' }]
+    })
+
+    const response = await createClient()
+
+    expect(response.statusCode).toBe(200)
+    expect(clientService.saveClient).toHaveBeenCalledWith(expect.anything(), {
+      clientId: 'my_client_id',
+      clientName: 'goodName1-_.',
+      secrets: [{ id: 'secret-1', createdAt: '2026-10-29T00:00:00Z' }],
+      tenantServiceName: 'waste-movement-external-api'
+    })
+  })
+
+  it('saves the created client with empty secrets when fetching metadata fails', async () => {
+    getCognitoCredential.mockRejectedValue(new Error('CDP down'))
+
+    const response = await createClient()
+
+    expect(response.statusCode).toBe(200)
+    expect(clientService.saveClient).toHaveBeenCalledWith(expect.anything(), {
+      clientId: 'my_client_id',
+      clientName: 'goodName1-_.',
+      secrets: [],
+      tenantServiceName: 'waste-movement-external-api'
+    })
   })
 })
 
