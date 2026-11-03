@@ -29,6 +29,13 @@ async function* pages(...results) {
   yield* results
 }
 
+// Pages that fail to load, as when Cognito can't be reached. The yield is
+// only there because a generator must have one
+async function* failingPages(err) {
+  yield* []
+  throw err
+}
+
 describe('listUserPoolClients', () => {
   beforeEach(() => {
     mockPages.mockReset()
@@ -125,12 +132,7 @@ describe('listUserPoolClients', () => {
 
   it('throws an error naming the pool when a page cannot be read', async () => {
     const err = new Error('Access denied')
-    mockPages.mockReturnValue(
-      (async function* () {
-        yield* []
-        throw err
-      })()
-    )
+    mockPages.mockReturnValue(failingPages(err))
 
     await expect(listUserPoolClients(service)).rejects.toMatchObject({
       message: 'Reading user pool eu-west-2_TEST failed: Error: Access denied',
@@ -143,12 +145,7 @@ describe('listUserPoolClients', () => {
       new Error('connect ECONNREFUSED 1.2.3.4:443'),
       new Error('connect ENETUNREACH ::1:443')
     ])
-    mockPages.mockReturnValue(
-      (async function* () {
-        yield* []
-        throw err
-      })()
-    )
+    mockPages.mockReturnValue(failingPages(err))
 
     await expect(listUserPoolClients(service)).rejects.toMatchObject({
       message:
@@ -165,12 +162,7 @@ describe('listUserPoolClients', () => {
     ],
     ['something thrown that is not an error', undefined, 'undefined']
   ])('describes %s', async (_, thrown, description) => {
-    mockPages.mockReturnValue(
-      (async function* () {
-        yield* []
-        throw thrown
-      })()
-    )
+    mockPages.mockReturnValue(failingPages(thrown))
 
     await expect(listUserPoolClients(service)).rejects.toMatchObject({
       message: `Reading user pool eu-west-2_TEST failed: ${description}`
