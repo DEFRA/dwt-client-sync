@@ -175,7 +175,7 @@ NODE_USE_ENV_PROXY=1
 HTTPS_PROXY=...
 NO_PROXY=...
 
-No additional proxy configuration is required in the service.
+This only covers Node's own agents. The AWS SDK makes its own, so the user pool's client is given an agent that reads the same variables (`src/common/helpers/user-pool.js`).
 
 ## Docker
 
