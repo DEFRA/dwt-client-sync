@@ -1,3 +1,4 @@
+import https from 'node:https'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const { mockPages, clientConfigs } = vi.hoisted(() => ({
@@ -28,13 +29,23 @@ async function* pages(...results) {
   yield* results
 }
 
+// Pages that fail to load, as when Cognito can't be reached. The yield is
+// only there because a generator must have one
+async function* failingPages(err) {
+  yield* []
+  throw err
+}
+
 describe('listUserPoolClients', () => {
   beforeEach(() => {
     mockPages.mockReset()
   })
 
   it("uses AWS's Cognito in the configured region when no endpoint is set", () => {
-    expect(clientConfigs[0]).toStrictEqual({ region: 'eu-west-2' })
+    expect(clientConfigs[0]).toStrictEqual({
+      region: 'eu-west-2',
+      requestHandler: expect.any(Object)
+    })
   })
 
   it('uses the configured endpoint, such as a local Cognito', async () => {
@@ -47,9 +58,21 @@ describe('listUserPoolClients', () => {
       vi.stubEnv('COGNITO_USER_POOL_ENDPOINT', '')
     }
 
-    expect(clientConfigs.at(-1)).toStrictEqual({
+    expect(clientConfigs.at(-1)).toMatchObject({
       region: 'eu-west-2',
       endpoint: 'http://floci:4566'
+    })
+  })
+
+  it("goes through the proxy in the environment, as CDP's are", () => {
+    const { httpsAgent, ...timeouts } = clientConfigs[0].requestHandler
+
+    expect(httpsAgent).toBeInstanceOf(https.Agent)
+    expect(httpsAgent.keepAlive).toBe(true)
+    expect(httpsAgent.options.proxyEnv).toBe(process.env)
+    expect(timeouts).toStrictEqual({
+      connectionTimeout: 5_000,
+      requestTimeout: 30_000
     })
   })
 
@@ -109,16 +132,40 @@ describe('listUserPoolClients', () => {
 
   it('throws an error naming the pool when a page cannot be read', async () => {
     const err = new Error('Access denied')
-    mockPages.mockReturnValue(
-      (async function* () {
-        yield* []
-        throw err
-      })()
-    )
+    mockPages.mockReturnValue(failingPages(err))
 
     await expect(listUserPoolClients(service)).rejects.toMatchObject({
-      message: 'Reading user pool eu-west-2_TEST failed: Access denied',
+      message: 'Reading user pool eu-west-2_TEST failed: Error: Access denied',
       cause: err
+    })
+  })
+
+  it('lists the reasons for a failed connection, whose error has no message', async () => {
+    const err = new AggregateError([
+      new Error('connect ECONNREFUSED 1.2.3.4:443'),
+      new Error('connect ENETUNREACH ::1:443')
+    ])
+    mockPages.mockReturnValue(failingPages(err))
+
+    await expect(listUserPoolClients(service)).rejects.toMatchObject({
+      message:
+        'Reading user pool eu-west-2_TEST failed: AggregateError: connect ECONNREFUSED 1.2.3.4:443; connect ENETUNREACH ::1:443',
+      cause: err
+    })
+  })
+
+  it.each([
+    [
+      'the code of a failed connection with no reasons',
+      Object.assign(new AggregateError([]), { code: 'ECONNREFUSED' }),
+      'AggregateError: ECONNREFUSED'
+    ],
+    ['something thrown that is not an error', undefined, 'undefined']
+  ])('describes %s', async (_, thrown, description) => {
+    mockPages.mockReturnValue(failingPages(thrown))
+
+    await expect(listUserPoolClients(service)).rejects.toMatchObject({
+      message: `Reading user pool eu-west-2_TEST failed: ${description}`
     })
   })
 })

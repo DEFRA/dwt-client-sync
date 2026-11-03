@@ -2,6 +2,7 @@ import {
   CognitoIdentityProviderClient,
   paginateListUserPoolClients
 } from '@aws-sdk/client-cognito-identity-provider'
+import https from 'node:https'
 import { config } from '#/config.js'
 import { managedServices } from '#/common/helpers/managed-services.js'
 
@@ -14,7 +15,14 @@ const { region, userPoolId, userPoolEndpoint } = config.get('cognito')
 // (https://github.com/DEFRA/cdp-mono-lambda/tree/main/modules/manage_tenant_service_user_pool)
 const cognito = new CognitoIdentityProviderClient({
   region,
-  ...(userPoolEndpoint && { endpoint: userPoolEndpoint })
+  ...(userPoolEndpoint && { endpoint: userPoolEndpoint }),
+  requestHandler: {
+    // CDP only lets services reach AWS through its proxy. NODE_USE_ENV_PROXY
+    // only covers Node's own agents, not the SDK's, so it's set here too
+    httpsAgent: new https.Agent({ keepAlive: true, proxyEnv: process.env }),
+    connectionTimeout: 5_000,
+    requestTimeout: 30_000
+  }
 })
 
 /**
@@ -48,10 +56,22 @@ async function listUserPoolClients(tenantServiceName) {
       }))
     )
   } catch (err) {
-    throw new Error(`Reading user pool ${userPoolId} failed: ${err.message}`, {
-      cause: err
-    })
+    throw new Error(
+      `Reading user pool ${userPoolId} failed: ${describeError(err)}`,
+      { cause: err }
+    )
   }
+}
+
+// A failed connection can be an AggregateError with an empty message, with
+// the reasons in its errors
+function describeError(err) {
+  const reasons = [
+    err?.message,
+    ...(err?.errors ?? []).map((e) => e?.message)
+  ].filter(Boolean)
+  const details = reasons.length ? reasons.join('; ') : err?.code
+  return [err?.name, details].filter(Boolean).join(': ') || String(err)
 }
 
 export { listUserPoolClients }
