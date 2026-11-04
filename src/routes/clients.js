@@ -463,9 +463,8 @@ export const clients = [
         } catch (err) {
           logger.error(`Saving rotated client failed: ${err.message}`)
           // If secret metadata can't be fetched
-          // Save secrets as empty,
+          // We don't have any information to save
           // Will be repopulated next sync.
-          trySaveRotatedClient([])
         }
 
         // Only time the new secret is available, so it must be returned

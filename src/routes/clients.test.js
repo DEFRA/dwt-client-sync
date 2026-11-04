@@ -693,12 +693,16 @@ describe('POST Clients rotate', () => {
   }
   let server
   let rotateCognitoCredential
+  let getCognitoCredential
   let clientService
 
   beforeAll(async () => {
     rotateCognitoCredential = (
       await import('#/common/helpers/cognito-client.js')
     ).rotateCognitoCredential
+    getCognitoCredential = (
+      await import('#/common/helpers/cognito-client.js')
+    ).getCognitoCredential
     clientService = await import('#/services/clients.js')
     const { createServer } = await import('#/server.js')
 
@@ -729,6 +733,17 @@ describe('POST Clients rotate', () => {
       tenantServiceName,
       'Test Client'
     )
+  })
+
+  it('does not save the client when fetching secret metadata fails', async () => {
+    vi.spyOn(clientService, 'saveClient')
+    getCognitoCredential.mockRejectedValue(new Error('CDP down'))
+
+    const response = await server.inject({ method: 'POST', url, auth })
+
+    expect(response.statusCode).toBe(200)
+    expect(JSON.parse(response.payload)).toStrictEqual(rotatedCredentials)
+    expect(clientService.saveClient).not.toHaveBeenCalled()
   })
 
   it('returns only the client fields, not anything else', async () => {
