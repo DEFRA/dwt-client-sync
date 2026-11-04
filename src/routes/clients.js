@@ -300,7 +300,7 @@ export const clients = [
           // If secret metadata can't be fetched
           // Save secrets as null,
           // Will be repopulated next sync.
-          await trySaveCreatedClient(null)
+          await trySaveCreatedClient()
         }
 
         if (!createdClient.clientSecret) {

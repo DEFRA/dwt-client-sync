@@ -8,7 +8,13 @@ const tenantServiceName = 'waste-movement-external-api'
 const cognitoClient = {
   clientId: 'client-1',
   clientName: 'Client_One',
-  clientSecret: 'secret'
+  clientSecret: 'secret',
+  secrets: [
+    {
+      id: 'client1secret1',
+      createdAt: '2026-01-01T01:01:01.100000+00:00'
+    }
+  ]
 }
 
 describe('#toClientRecord', () => {
@@ -17,7 +23,12 @@ describe('#toClientRecord', () => {
       clientId: 'client-1',
       clientName: 'Client_One',
       tenantServiceName,
-      secrets: []
+      secrets: [
+        {
+          id: 'client1secret1',
+          createdAt: '2026-01-01T01:01:01.100000+00:00'
+        }
+      ]
     })
   })
 })
@@ -73,7 +84,7 @@ describe('client round trip', () => {
       clientId: cognitoClient.clientId,
       clientName: cognitoClient.clientName,
       tenantServiceName,
-      secrets: []
+      secrets: cognitoClient.secrets
     })
   })
 })

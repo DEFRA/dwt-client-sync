@@ -668,7 +668,7 @@ describe('POST Clients', () => {
     })
   })
 
-  it('saves the created client with null secrets when fetching metadata fails', async () => {
+  it('saves the created client with undefined secrets when fetching metadata fails', async () => {
     getCognitoCredential.mockRejectedValue(new Error('CDP down'))
 
     const response = await createClient()
@@ -677,7 +677,6 @@ describe('POST Clients', () => {
     expect(clientService.saveClient).toHaveBeenCalledWith(expect.anything(), {
       clientId: 'my_client_id',
       clientName: 'goodName1-_.',
-      secrets: null,
       tenantServiceName: 'waste-movement-external-api'
     })
   })
