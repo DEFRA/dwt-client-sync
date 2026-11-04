@@ -59,7 +59,7 @@ class CdpError extends Error {
  * @returns {CognitoClient | undefined} undefined when the details can't be
  * read, as they can't be mapped
  */
-function toCognitoClient(details) {
+function fromClientDetails(details) {
   if (!details || typeof details !== 'object') {
     return undefined
   }
@@ -93,14 +93,15 @@ function toCognitoClient(details) {
  */
 function toCognitoClients(payload) {
   const clientDetails = payload?.client_details
-
-  if (!Array.isArray(clientDetails)) {
-    return undefined
-  }
-
-  const clients = clientDetails.map(toCognitoClient)
+  if (!Array.isArray(clientDetails)) return undefined
+  const clients = clientDetails.map(fromClientDetails)
   // A client that isn't an object can't be read, so the page can't be trusted
   return clients.some((client) => client === undefined) ? undefined : clients
+}
+
+// CDP's response for the single-client lookup
+function toCognitoClient(payload) {
+  return fromClientDetails(payload?.client_details)
 }
 
 /**

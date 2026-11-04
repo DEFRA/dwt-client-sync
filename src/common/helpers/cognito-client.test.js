@@ -933,7 +933,7 @@ describe('getCognitoCredential', () => {
   it('returns the client successfully', async () => {
     mockGet.mockResolvedValue({
       res: { statusCode: 200 },
-      payload: clientDetails()
+      payload: { client_details: clientDetails() }
     })
 
     const result = await getCognitoCredential('my-service', 'client-123')
@@ -958,7 +958,7 @@ describe('getCognitoCredential', () => {
   it('signs a GET request with the client id in the path', async () => {
     mockGet.mockResolvedValue({
       res: { statusCode: 200 },
-      payload: clientDetails()
+      payload: { client_details: clientDetails() }
     })
 
     await getCognitoCredential('my-service', 'client-123')
@@ -981,7 +981,7 @@ describe('getCognitoCredential', () => {
   it('encodes the service name and client id in the path', async () => {
     mockGet.mockResolvedValue({
       res: { statusCode: 200 },
-      payload: clientDetails()
+      payload: { client_details: clientDetails() }
     })
 
     await getCognitoCredential('my service', 'client/123')
@@ -996,7 +996,7 @@ describe('getCognitoCredential', () => {
   it('logs the uri before sending the request', async () => {
     mockGet.mockResolvedValue({
       res: { statusCode: 200 },
-      payload: clientDetails()
+      payload: { client_details: clientDetails() }
     })
 
     await getCognitoCredential('my-service', 'client-123')
