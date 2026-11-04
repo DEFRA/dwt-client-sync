@@ -708,9 +708,8 @@ describe('POST Clients rotate', () => {
     rotateCognitoCredential = (
       await import('#/common/helpers/cognito-client.js')
     ).rotateCognitoCredential
-    getCognitoCredential = (
-      await import('#/common/helpers/cognito-client.js')
-    ).getCognitoCredential
+    getCognitoCredential = (await import('#/common/helpers/cognito-client.js'))
+      .getCognitoCredential
     clientService = await import('#/services/clients.js')
     const { createServer } = await import('#/server.js')
 

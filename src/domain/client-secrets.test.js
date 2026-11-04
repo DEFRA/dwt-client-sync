@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  PurgeOutcome,
-  purgeResult,
-} from './client-secrets.js'
+import { PurgeOutcome, purgeResult } from './client-secrets.js'
 
 const clientId = 'my_client_id'
 const client = { clientId, clientName: 'Test_Client' }

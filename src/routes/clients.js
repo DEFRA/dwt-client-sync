@@ -441,14 +441,10 @@ export const clients = [
           try {
             await saveClient(
               db,
-              toClientRecord(
-                { ...rotatedClient, secrets },
-                tenantServiceName,
-                secrets
-              )
+              toClientRecord({ ...rotatedClient, secrets }, tenantServiceName)
             )
           } catch (err) {
-            logger.error(`Saving rotated client failed: ${err.message}`)
+            logger.error(`Failed to fetch credential metadata: ${err.message}`)
           }
         }
 
@@ -521,10 +517,18 @@ export const clients = [
         // CDP has purged, so a failure here mustn't make it look as if it didn't.
         // The next sync corrects the stored secrets
         try {
-          const { secrets } = await getCognitoCredential(tenantServiceName, clientId)
-          await saveClient(db, toClientRecord({ ...client, secrets }, tenantServiceName))
+          const { secrets } = await getCognitoCredential(
+            tenantServiceName,
+            clientId
+          )
+          await saveClient(
+            db,
+            toClientRecord({ ...client, secrets }, tenantServiceName)
+          )
         } catch (err) {
-          logger.error(`Updating client ${clientId}'s stored secrets after purging failed: ${err.message}`)
+          logger.error(
+            `Updating client ${clientId}'s stored secrets after purging failed: ${err.message}`
+          )
         }
 
         return h.response().code(204)
