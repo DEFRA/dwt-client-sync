@@ -298,9 +298,9 @@ export const clients = [
         } catch (err) {
           logger.error(`Failed to fetch credential metadata: ${err.message}`)
           // If secret metadata can't be fetched
-          // Save secrets as empty,
+          // Save secrets as null,
           // Will be repopulated next sync.
-          await trySaveCreatedClient([])
+          await trySaveCreatedClient(null)
         }
 
         if (!createdClient.clientSecret) {

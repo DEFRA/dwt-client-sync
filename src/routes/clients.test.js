@@ -563,13 +563,17 @@ describe('POST Clients', () => {
   })
 
   it("saves the created client's record, without syncing", async () => {
+    getCognitoCredential.mockResolvedValue({
+      secrets: [{ id: 'secret-1' }]
+    })
+
     const response = await createClient()
 
     expect(response.statusCode).toBe(200)
     expect(clientService.saveClient).toHaveBeenCalledWith(expect.anything(), {
       clientId: 'my_client_id',
       clientName: 'goodName1-_.',
-      secrets: [],
+      secrets: [{ id: 'secret-1' }],
       tenantServiceName: 'waste-movement-external-api'
     })
     expect(clientSyncService.sync).not.toHaveBeenCalled()
@@ -586,6 +590,10 @@ describe('POST Clients', () => {
   })
 
   it('stores the created client so it can be fetched straight away', async () => {
+    getCognitoCredential.mockResolvedValue({
+      secrets: [{ id: 'secret-1' }]
+    })
+
     clientService.saveClient.mockRestore()
 
     await createClient()
@@ -601,7 +609,7 @@ describe('POST Clients', () => {
     expect(JSON.parse(response.payload)).toStrictEqual({
       clientId: 'my_client_id',
       clientName: 'goodName1-_.',
-      secrets: [],
+      secrets: [{ id: 'secret-1' }],
       tenantServiceName: 'waste-movement-external-api'
     })
     // Saving the same client twice leaves one record
@@ -644,7 +652,7 @@ describe('POST Clients', () => {
     )
   })
 
-  it('saves the created client with the secrets from the credential metadata', async () => {
+  it('saves the created client with secrets from the metadata', async () => {
     getCognitoCredential.mockResolvedValue({
       secrets: [{ id: 'secret-1', createdAt: '2026-10-29T00:00:00Z' }]
     })
@@ -660,7 +668,7 @@ describe('POST Clients', () => {
     })
   })
 
-  it('saves the created client with empty secrets when fetching metadata fails', async () => {
+  it('saves the created client with null secrets when fetching metadata fails', async () => {
     getCognitoCredential.mockRejectedValue(new Error('CDP down'))
 
     const response = await createClient()
@@ -669,7 +677,7 @@ describe('POST Clients', () => {
     expect(clientService.saveClient).toHaveBeenCalledWith(expect.anything(), {
       clientId: 'my_client_id',
       clientName: 'goodName1-_.',
-      secrets: [],
+      secrets: null,
       tenantServiceName: 'waste-movement-external-api'
     })
   })
