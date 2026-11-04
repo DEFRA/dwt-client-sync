@@ -43,7 +43,7 @@ describe('Client Routes', () => {
   })
 
   const clientRecord = {
-    clientName: 'Test Client',
+    clientName: 'Test_Client',
     clientId: '1a2b3c4d5e6f7g8h9i0j1k2l3m',
     tenantServiceName: 'waste-movement-external-api'
   }
@@ -111,18 +111,18 @@ describe('GET Clients for a user pool', () => {
   const auth = { strategy: 'basic', credentials: { username: 'test' } }
   const clientRecords = [
     {
-      clientName: 'Test Client One',
+      clientName: 'Test_Client_One',
       clientId: '1a2b3c4d5e6f7g8h9i0j1k2l3m',
       tenantServiceName: 'waste-movement-external-api'
     },
     {
-      clientName: 'Test Client Two',
+      clientName: 'Test_Client_Two',
       clientId: '2a2b3c4d5e6f7g8h9i0j1k2l3m',
       tenantServiceName: 'waste-movement-external-api'
     }
   ]
   const otherPoolRecord = {
-    clientName: 'Test Client Three',
+    clientName: 'Test_Client_Three',
     clientId: '3a2b3c4d5e6f7g8h9i0j1k2l3m',
     tenantServiceName: 'waste-movement-backend-service'
   }
@@ -232,8 +232,8 @@ describe('POST Clients sync', () => {
 
   test('Should return all synced clients', async () => {
     allCognitoCredentials.mockResolvedValue([
-      { clientName: 'Client One', clientId: 'client-1' },
-      { clientName: 'Client Two', clientId: 'client-2' }
+      { clientName: 'Client_One', clientId: 'client-1' },
+      { clientName: 'Client_Two', clientId: 'client-2' }
     ])
 
     const response = await server.inject({
@@ -689,13 +689,13 @@ describe('POST Clients rotate', () => {
   const clientId = 'my_client_id'
   const url = `/clients/${tenantServiceName}/${clientId}/rotate`
   const rotatedClient = {
-    clientName: 'Test Client',
+    clientName: 'Test_Client',
     clientId,
     clientSecret: 'my_new_client_secret'
   }
   // What the endpoint returns for rotatedClient
   const rotatedCredentials = {
-    clientName: 'Test Client',
+    clientName: 'Test_Client',
     clientId,
     clientSecret: 'my_new_client_secret'
   }
@@ -720,7 +720,7 @@ describe('POST Clients rotate', () => {
 
   beforeEach(() => {
     vi.spyOn(clientService, 'findClient').mockResolvedValue({
-      clientName: 'Test Client',
+      clientName: 'Test_Client',
       clientId,
       tenantServiceName
     })
@@ -739,7 +739,7 @@ describe('POST Clients rotate', () => {
     expect(JSON.parse(response.payload)).toStrictEqual(rotatedCredentials)
     expect(rotateCognitoCredential).toHaveBeenCalledWith(
       tenantServiceName,
-      'Test Client'
+      'Test_Client'
     )
   })
 
@@ -787,7 +787,7 @@ describe('POST Clients rotate', () => {
   it('returns only this client and warns when others share its name', async () => {
     rotateCognitoCredential.mockResolvedValue([
       {
-        clientName: 'Test Client',
+        clientName: 'Test_Client',
         clientId: 'other_client_id',
         clientSecret: 'other_secret'
       },
@@ -856,7 +856,7 @@ describe('POST Clients rotate', () => {
   it('returns a 409 error when CDP rotates a different client with the stored name', async () => {
     rotateCognitoCredential.mockResolvedValue([
       {
-        clientName: 'Test Client',
+        clientName: 'Test_Client',
         clientId: 'other_client_id',
         clientSecret: 'other_secret'
       }
@@ -916,7 +916,7 @@ describe('POST Clients purge', () => {
   const clientId = 'my_client_id'
   const url = `/clients/${tenantServiceName}/${clientId}/purge`
   const storedClient = {
-    clientName: 'Test Client',
+    clientName: 'Test_Client',
     clientId,
     tenantServiceName
   }
@@ -969,7 +969,7 @@ describe('POST Clients purge', () => {
     [
       'NAME_SHARED',
       409,
-      "Another client is named 'Test Client' (case insensitive), and CDP removes secrets by name, so no secret was removed"
+      "Another client is named 'Test_Client' (case insensitive), and CDP removes secrets by name, so no secret was removed"
     ],
     [
       'OUTCOME_UNKNOWN',
@@ -1094,7 +1094,7 @@ describe('DELETE Clients', () => {
   })
 
   const clientRecord = {
-    clientName: 'Test Client',
+    clientName: 'Test_Client',
     clientId: '1a2b3c4d5e6f7g8h9i0j1k2l3m',
     tenantServiceName: 'waste-movement-external-api'
   }

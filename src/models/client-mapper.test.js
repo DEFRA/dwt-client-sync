@@ -7,7 +7,7 @@ import {
 const tenantServiceName = 'waste-movement-external-api'
 const cognitoClient = {
   clientId: 'client-1',
-  clientName: 'Client One',
+  clientName: 'Client_One',
   clientSecret: 'secret'
 }
 
@@ -15,7 +15,7 @@ describe('#toClientRecord', () => {
   it('stores the client against its service, without the secret', () => {
     expect(toClientRecord(cognitoClient, tenantServiceName)).toStrictEqual({
       clientId: 'client-1',
-      clientName: 'Client One',
+      clientName: 'Client_One',
       tenantServiceName,
       secrets: []
     })
@@ -26,7 +26,7 @@ describe('#toClientResponse', () => {
   it('returns only the published fields of a stored client', () => {
     const record = {
       clientId: 'client-1',
-      clientName: 'Client One',
+      clientName: 'Client_One',
       tenantServiceName,
       lastSynced: '2026-10-15T12:00:00Z',
       secrets: [
@@ -39,7 +39,7 @@ describe('#toClientResponse', () => {
 
     expect(toClientResponse(record)).toStrictEqual({
       clientId: 'client-1',
-      clientName: 'Client One',
+      clientName: 'Client_One',
       tenantServiceName,
       secrets: [
         {
@@ -57,7 +57,7 @@ describe('#toClientCredentialsResponse', () => {
       toClientCredentialsResponse({ ...cognitoClient, createdAt: 'today' })
     ).toStrictEqual({
       clientId: 'client-1',
-      clientName: 'Client One',
+      clientName: 'Client_One',
       clientSecret: 'secret'
     })
   })
