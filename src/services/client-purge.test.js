@@ -26,8 +26,8 @@ const { purgeOldSecret } = await import('./client-purge.js')
 
 const tenantServiceName = 'waste-movement-external-api'
 const clientId = 'my_client_id'
-const client = { clientId, clientName: 'Test Client' }
-const otherClient = { clientId: 'other_client_id', clientName: 'Other Client' }
+const client = { clientId, clientName: 'Test_Client' }
+const otherClient = { clientId: 'other_client_id', clientName: 'Other_Client' }
 
 describe('purgeOldSecret', () => {
   beforeEach(() => {
@@ -43,11 +43,11 @@ describe('purgeOldSecret', () => {
     expect(listClients).toHaveBeenCalledWith(tenantServiceName)
     expect(purgeCognitoCredential).toHaveBeenCalledWith(
       tenantServiceName,
-      'Test Client'
+      'Test_Client'
     )
   })
 
-  it.each([['Test Client'], ['test CLIENT']])(
+  it.each([['Test_Client'], ['test_CLIENT']])(
     'does not purge when another client is named %s',
     async (otherName) => {
       listClients.mockResolvedValue([
@@ -78,7 +78,7 @@ describe('purgeOldSecret', () => {
 
   it('logs an error when CDP also purges other clients with the name', async () => {
     purgeCognitoCredential.mockResolvedValue([
-      { clientId: 'other_client_id', clientName: 'Test Client' },
+      { clientId: 'other_client_id', clientName: 'Test_Client' },
       client
     ])
 

@@ -81,16 +81,16 @@ describe('listUserPoolClients', () => {
       pages(
         {
           UserPoolClients: [
-            { ClientId: 'id-1', ClientName: 'Client 1', UserPoolId: 'pool' }
+            { ClientId: 'id-1', ClientName: 'Client_1', UserPoolId: 'pool' }
           ]
         },
-        { UserPoolClients: [{ ClientId: 'id-2', ClientName: 'Client 2' }] }
+        { UserPoolClients: [{ ClientId: 'id-2', ClientName: 'Client_2' }] }
       )
     )
 
     await expect(listUserPoolClients(service)).resolves.toStrictEqual([
-      { clientId: 'id-1', clientName: 'Client 1' },
-      { clientId: 'id-2', clientName: 'Client 2' }
+      { clientId: 'id-1', clientName: 'Client_1' },
+      { clientId: 'id-2', clientName: 'Client_2' }
     ])
     expect(mockPages).toHaveBeenCalledWith(
       { client: expect.anything() },

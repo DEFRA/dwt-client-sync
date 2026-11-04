@@ -54,7 +54,7 @@ describe('Software Provider sync', () => {
     mockReleaseLock.mockResolvedValue(mockLock)
   })
 
-  const storedClients = [{ clientId: 'client-1', clientName: 'Client One' }]
+  const storedClients = [{ clientId: 'client-1', clientName: 'Client_One' }]
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -88,8 +88,8 @@ describe('Software Provider sync', () => {
 
   it('returns all synced clients', async () => {
     mockAllCognitoCredentials.mockResolvedValue([
-      { clientName: 'Client One', clientId: 'client-1' },
-      { clientName: 'Client Two', clientId: 'client-2' }
+      { clientName: 'Client_One', clientId: 'client-1' },
+      { clientName: 'Client_Two', clientId: 'client-2' }
     ])
 
     const result = await sync()
@@ -121,12 +121,12 @@ describe('Software Provider sync', () => {
       [
         {
           clientId: 'client-1',
-          clientName: 'Client One',
+          clientName: 'Client_One',
           tenantServiceName: 'service-one'
         },
         {
           clientId: 'client-2',
-          clientName: 'Client Two',
+          clientName: 'Client_Two',
           tenantServiceName: 'service-one'
         }
       ],

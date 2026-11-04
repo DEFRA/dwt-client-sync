@@ -2,10 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { PurgeOutcome, purgeResult } from './client-secrets.js'
 
 const clientId = 'my_client_id'
-const client = { clientId, clientName: 'Test Client' }
+const client = { clientId, clientName: 'Test_Client' }
 
 describe('purgeResult', () => {
-  const other = { clientId: 'other_client_id', clientName: 'Test Client' }
+  const other = { clientId: 'other_client_id', clientName: 'Test_Client' }
 
   it.each([
     ['this client purged', [client], PurgeOutcome.PURGED, 0],

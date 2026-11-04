@@ -9,7 +9,7 @@ const { listClients } = await import('./client-directory.js')
 
 describe('listClients', () => {
   it("returns the service's clients from the user pool", async () => {
-    const clients = [{ clientId: 'id-1', clientName: 'Client 1' }]
+    const clients = [{ clientId: 'id-1', clientName: 'Client_1' }]
     listUserPoolClients.mockResolvedValue(clients)
 
     await expect(
