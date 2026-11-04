@@ -2,12 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { isNameTaken, sharesName } from './client-names.js'
 
 const clients = [
-  { clientId: 'id-1', clientName: 'Acme Waste' },
-  { clientId: 'id-2', clientName: 'Beta Tracking' }
+  { clientId: 'id-1', clientName: 'Acme_Waste' },
+  { clientId: 'id-2', clientName: 'Beta_Tracking' }
 ]
 
 describe('isNameTaken', () => {
-  it.each([['Acme Waste'], ['acme WASTE']])(
+  it.each([['Acme_Waste'], ['acme_WASTE']])(
     'finds %s, ignoring case',
     (name) => {
       expect(isNameTaken(clients, name)).toBe(true)
@@ -28,7 +28,7 @@ describe('sharesName', () => {
     expect(sharesName(clients, clients[0])).toBe(false)
   })
 
-  it.each([['Acme Waste'], ['ACME waste']])(
+  it.each([['Acme_Waste'], ['ACME_waste']])(
     'finds another client named %s, ignoring case',
     (otherName) => {
       const withOther = [

@@ -3,7 +3,7 @@ import { findClient, readStoredClients, saveClient, store } from './clients.js'
 describe('#findClient', () => {
   const dbFindFn = vi.fn()
   const clientRecord = {
-    clientName: 'Test Client',
+    clientName: 'Test_Client',
     clientId: '1a2b3c4d5e6f7g8h9i0j1k2l3m',
     tenantServiceName: 'waste-movement-external-api'
   }
@@ -78,7 +78,7 @@ describe('#store', () => {
       deletedCount: 0
     })
 
-    const incomingClients = [{ clientId: 'client-1', clientName: 'Client One' }]
+    const incomingClients = [{ clientId: 'client-1', clientName: 'Client_One' }]
 
     const result = await store(
       logger,
@@ -93,7 +93,7 @@ describe('#store', () => {
         {
           replaceOne: {
             filter: { clientId: 'client-1', tenantServiceName },
-            replacement: { clientId: 'client-1', clientName: 'Client One' },
+            replacement: { clientId: 'client-1', clientName: 'Client_One' },
             upsert: true
           }
         }
@@ -108,14 +108,14 @@ describe('#store', () => {
   })
 
   it('updates a client whose fields have changed', async () => {
-    const existing = [{ clientId: 'client-1', clientName: 'Old Name' }]
+    const existing = [{ clientId: 'client-1', clientName: 'Old_Name' }]
     mockBulkWrite.mockResolvedValue({
       upsertedCount: 0,
       modifiedCount: 1,
       deletedCount: 0
     })
 
-    const incomingClients = [{ clientId: 'client-1', clientName: 'New Name' }]
+    const incomingClients = [{ clientId: 'client-1', clientName: 'New_Name' }]
 
     await store(logger, db, incomingClients, tenantServiceName, existing)
 
@@ -124,7 +124,7 @@ describe('#store', () => {
         {
           updateOne: {
             filter: { clientId: 'client-1', tenantServiceName },
-            update: { $set: { clientId: 'client-1', clientName: 'New Name' } }
+            update: { $set: { clientId: 'client-1', clientName: 'New_Name' } }
           }
         }
       ],
@@ -133,7 +133,7 @@ describe('#store', () => {
   })
 
   it('skips a client whose fields are unchanged', async () => {
-    const unchangedClient = { clientId: 'client-1', clientName: 'Same Name' }
+    const unchangedClient = { clientId: 'client-1', clientName: 'Same_Name' }
 
     const existing = [unchangedClient]
 
@@ -153,7 +153,7 @@ describe('#store', () => {
   })
 
   it('deletes a client that is missing from the incoming list', async () => {
-    const existing = [{ clientId: 'client-1', clientName: 'Client One' }]
+    const existing = [{ clientId: 'client-1', clientName: 'Client_One' }]
     mockBulkWrite.mockResolvedValue({
       upsertedCount: 0,
       modifiedCount: 0,
@@ -182,8 +182,8 @@ describe('#store', () => {
   it('handles a mix of inserts, updates, and deletes in one call', async () => {
     const existing = [
       { clientId: 'client-1', clientName: 'Unchanged' },
-      { clientId: 'client-2', clientName: 'Old Name' },
-      { clientId: 'client-3', clientName: 'To Be Deleted' }
+      { clientId: 'client-2', clientName: 'Old_Name' },
+      { clientId: 'client-3', clientName: 'To_Be_Deleted' }
     ]
     mockBulkWrite.mockResolvedValue({
       upsertedCount: 1,
@@ -193,8 +193,8 @@ describe('#store', () => {
 
     const incomingClients = [
       { clientId: 'client-1', clientName: 'Unchanged' },
-      { clientId: 'client-2', clientName: 'New Name' },
-      { clientId: 'client-4', clientName: 'Brand New' }
+      { clientId: 'client-2', clientName: 'New_Name' },
+      { clientId: 'client-4', clientName: 'Brand_New' }
     ]
 
     await store(logger, db, incomingClients, tenantServiceName, existing)
@@ -204,13 +204,13 @@ describe('#store', () => {
         {
           updateOne: {
             filter: { clientId: 'client-2', tenantServiceName },
-            update: { $set: { clientId: 'client-2', clientName: 'New Name' } }
+            update: { $set: { clientId: 'client-2', clientName: 'New_Name' } }
           }
         },
         {
           replaceOne: {
             filter: { clientId: 'client-4', tenantServiceName },
-            replacement: { clientId: 'client-4', clientName: 'Brand New' },
+            replacement: { clientId: 'client-4', clientName: 'Brand_New' },
             upsert: true
           }
         },
@@ -265,7 +265,7 @@ describe('#store', () => {
     bulkWriteError.result = { upsertedCount: 0 }
     mockBulkWrite.mockRejectedValue(bulkWriteError)
 
-    const incomingClients = [{ clientId: 'client-1', clientName: 'Client One' }]
+    const incomingClients = [{ clientId: 'client-1', clientName: 'Client_One' }]
 
     await expect(
       store(logger, db, incomingClients, tenantServiceName, existing)
@@ -319,7 +319,7 @@ describe('#saveClient', () => {
     const db = { collection: vi.fn(() => ({ replaceOne })) }
     const record = {
       clientId: 'my_client_id',
-      clientName: 'Test Client',
+      clientName: 'Test_Client',
       tenantServiceName: 'waste-movement-external-api'
     }
 
