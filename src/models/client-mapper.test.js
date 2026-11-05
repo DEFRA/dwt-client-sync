@@ -8,7 +8,13 @@ const tenantServiceName = 'waste-movement-external-api'
 const cognitoClient = {
   clientId: 'client-1',
   clientName: 'Client_One',
-  clientSecret: 'secret'
+  clientSecret: 'secret',
+  secrets: [
+    {
+      id: 'client1secret1',
+      createdAt: '2026-01-01T01:01:01.100000+00:00'
+    }
+  ]
 }
 
 describe('#toClientRecord', () => {
@@ -16,7 +22,13 @@ describe('#toClientRecord', () => {
     expect(toClientRecord(cognitoClient, tenantServiceName)).toStrictEqual({
       clientId: 'client-1',
       clientName: 'Client_One',
-      tenantServiceName
+      tenantServiceName,
+      secrets: [
+        {
+          id: 'client1secret1',
+          createdAt: '2026-01-01T01:01:01.100000+00:00'
+        }
+      ]
     })
   })
 })
@@ -27,13 +39,25 @@ describe('#toClientResponse', () => {
       clientId: 'client-1',
       clientName: 'Client_One',
       tenantServiceName,
-      lastSynced: '2026-10-15T12:00:00Z'
+      lastSynced: '2026-10-15T12:00:00Z',
+      secrets: [
+        {
+          id: 'client1secret1',
+          createdAt: '2026-01-01T01:01:01.100000+00:00'
+        }
+      ]
     }
 
     expect(toClientResponse(record)).toStrictEqual({
       clientId: 'client-1',
       clientName: 'Client_One',
-      tenantServiceName
+      tenantServiceName,
+      secrets: [
+        {
+          id: 'client1secret1',
+          createdAt: '2026-01-01T01:01:01.100000+00:00'
+        }
+      ]
     })
   })
 })
@@ -59,7 +83,8 @@ describe('client round trip', () => {
     expect(response).toStrictEqual({
       clientId: cognitoClient.clientId,
       clientName: cognitoClient.clientName,
-      tenantServiceName
+      tenantServiceName,
+      secrets: cognitoClient.secrets
     })
   })
 })

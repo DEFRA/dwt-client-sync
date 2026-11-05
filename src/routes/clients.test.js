@@ -25,6 +25,7 @@ vi.mock('#/common/helpers/cognito-client.js', () => ({
   purgeCognitoCredential: vi.fn(),
   deleteCognitoCredential: vi.fn(),
   deleteClient: vi.fn(),
+  getCognitoCredential: vi.fn(),
   CdpError: MockCdpError
 }))
 
@@ -309,6 +310,7 @@ describe('POST Clients', () => {
   let clientService
   let allCognitoCredentials
   let listClients
+  let getCognitoCredential
 
   beforeAll(async () => {
     clientService = await import('#/services/clients.js')
@@ -318,6 +320,8 @@ describe('POST Clients', () => {
     ).createCognitoCredential
     allCognitoCredentials = (await import('#/common/helpers/cognito-client.js'))
       .allCognitoCredentials
+    getCognitoCredential = (await import('#/common/helpers/cognito-client.js'))
+      .getCognitoCredential
     clientSyncService = await import('#/services/client-sync.js')
     const { createServer } = await import('#/server.js')
 
@@ -559,12 +563,17 @@ describe('POST Clients', () => {
   })
 
   it("saves the created client's record, without syncing", async () => {
+    getCognitoCredential.mockResolvedValue({
+      secrets: [{ id: 'secret-1' }]
+    })
+
     const response = await createClient()
 
     expect(response.statusCode).toBe(200)
     expect(clientService.saveClient).toHaveBeenCalledWith(expect.anything(), {
       clientId: 'my_client_id',
       clientName: 'goodName1-_.',
+      secrets: [{ id: 'secret-1' }],
       tenantServiceName: 'waste-movement-external-api'
     })
     expect(clientSyncService.sync).not.toHaveBeenCalled()
@@ -581,6 +590,10 @@ describe('POST Clients', () => {
   })
 
   it('stores the created client so it can be fetched straight away', async () => {
+    getCognitoCredential.mockResolvedValue({
+      secrets: [{ id: 'secret-1' }]
+    })
+
     clientService.saveClient.mockRestore()
 
     await createClient()
@@ -596,6 +609,7 @@ describe('POST Clients', () => {
     expect(JSON.parse(response.payload)).toStrictEqual({
       clientId: 'my_client_id',
       clientName: 'goodName1-_.',
+      secrets: [{ id: 'secret-1' }],
       tenantServiceName: 'waste-movement-external-api'
     })
     // Saving the same client twice leaves one record
@@ -625,6 +639,47 @@ describe('POST Clients', () => {
       'Saving created client failed: Mongo down'
     )
   })
+
+  it('fetches secret metadata for the created client', async () => {
+    getCognitoCredential.mockResolvedValue({ secrets: [{ id: 'secret-1' }] })
+
+    const response = await createClient()
+
+    expect(response.statusCode).toBe(200)
+    expect(getCognitoCredential).toHaveBeenCalledWith(
+      'waste-movement-external-api',
+      'my_client_id'
+    )
+  })
+
+  it('saves the created client with secrets from the metadata', async () => {
+    getCognitoCredential.mockResolvedValue({
+      secrets: [{ id: 'secret-1', createdAt: '2026-10-29T00:00:00Z' }]
+    })
+
+    const response = await createClient()
+
+    expect(response.statusCode).toBe(200)
+    expect(clientService.saveClient).toHaveBeenCalledWith(expect.anything(), {
+      clientId: 'my_client_id',
+      clientName: 'goodName1-_.',
+      secrets: [{ id: 'secret-1', createdAt: '2026-10-29T00:00:00Z' }],
+      tenantServiceName: 'waste-movement-external-api'
+    })
+  })
+
+  it('saves the created client with undefined secrets when fetching metadata fails', async () => {
+    getCognitoCredential.mockRejectedValue(new Error('CDP down'))
+
+    const response = await createClient()
+
+    expect(response.statusCode).toBe(200)
+    expect(clientService.saveClient).toHaveBeenCalledWith(expect.anything(), {
+      clientId: 'my_client_id',
+      clientName: 'goodName1-_.',
+      tenantServiceName: 'waste-movement-external-api'
+    })
+  })
 })
 
 describe('POST Clients rotate', () => {
@@ -645,12 +700,15 @@ describe('POST Clients rotate', () => {
   }
   let server
   let rotateCognitoCredential
+  let getCognitoCredential
   let clientService
 
   beforeAll(async () => {
     rotateCognitoCredential = (
       await import('#/common/helpers/cognito-client.js')
     ).rotateCognitoCredential
+    getCognitoCredential = (await import('#/common/helpers/cognito-client.js'))
+      .getCognitoCredential
     clientService = await import('#/services/clients.js')
     const { createServer } = await import('#/server.js')
 
@@ -681,6 +739,17 @@ describe('POST Clients rotate', () => {
       tenantServiceName,
       'Test_Client'
     )
+  })
+
+  it('does not save the client when fetching secret metadata fails', async () => {
+    vi.spyOn(clientService, 'saveClient')
+    getCognitoCredential.mockRejectedValue(new Error('CDP down'))
+
+    const response = await server.inject({ method: 'POST', url, auth })
+
+    expect(response.statusCode).toBe(200)
+    expect(JSON.parse(response.payload)).toStrictEqual(rotatedCredentials)
+    expect(clientService.saveClient).not.toHaveBeenCalled()
   })
 
   it('returns only the client fields, not anything else', async () => {
