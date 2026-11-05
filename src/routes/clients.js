@@ -3,7 +3,7 @@ import Joi from 'joi'
 import { clientSchema } from '#/common/helpers/validation.js'
 import { findClient, findClients, saveClient } from '#/services/clients.js'
 import { listClients } from '#/services/client-directory.js'
-import { isNameTaken } from '#/domain/client-names.js'
+import { isNameTaken, sharesName } from '#/domain/client-names.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { managedServices } from '#/common/helpers/managed-services.js'
 import { sync } from '#/services/client-sync.js'
@@ -44,6 +44,11 @@ const CREATE_NO_SECRET_MESSAGE =
 // can't leave the client without a secret
 const PURGE_OUTCOME_UNKNOWN_MESSAGE =
   'Purge outcome unknown: the older secret may have been removed. It is safe to try again.'
+
+// Deleting a client that CDP has already deleted does nothing, and its stored
+// record is only removed once CDP has deleted it, so a retry finishes the job
+const DELETE_OUTCOME_UNKNOWN_MESSAGE =
+  'Delete outcome unknown: the client may have been deleted. It is safe to try again.'
 
 // CDP service names are lowercase kebab-case; Cognito client ids match [\w+]+
 const clientParamsSchema = Joi.object({
@@ -322,6 +327,9 @@ export const clients = [
     method: 'DELETE',
     path: '/clients/{tenantServiceName}/{clientId}',
     options: {
+      validate: {
+        params: clientParamsSchema
+      },
       pre: [checkTenantService]
     },
     handler: async (request, h) => {
@@ -331,7 +339,9 @@ export const clients = [
           auth,
           params: { tenantServiceName, clientId }
         } = request
-        logger.info(`Client deletion requested by ${auth.credentials.username}`)
+        logger.info(
+          `Client deletion requested by ${auth.credentials.username} for client ${clientId} of ${tenantServiceName}`
+        )
 
         const client = await findClient(tenantServiceName, clientId, db)
 
@@ -339,7 +349,29 @@ export const clients = [
           return clientNotFound(tenantServiceName, clientId)
         }
 
-        await deleteCognitoCredential(tenantServiceName, client.clientName)
+        const clients = await listClients(tenantServiceName)
+
+        // A client already gone from Cognito, as after a retry, only has its
+        // stored record left. CDP isn't asked, as another client may have been
+        // given the name since
+        if (clients.some((other) => other.clientId === clientId)) {
+          // CDP deletes by name, so it could delete another client with this
+          // name instead
+          if (sharesName(clients, client)) {
+            logger.error(
+              `Not deleting client ${clientId}: another client has the same name`
+            )
+            return Boom.conflict(
+              `Another client is named '${client.clientName}' (case insensitive), and CDP deletes clients by name, so nothing was deleted`
+            )
+          }
+
+          await deleteCognitoCredential(tenantServiceName, client.clientName)
+        } else {
+          logger.info(
+            `Client ${clientId} is already gone from Cognito, so only its stored record is deleted`
+          )
+        }
 
         try {
           await deleteClient(db, clientId, tenantServiceName)
@@ -354,6 +386,15 @@ export const clients = [
         return h.response()
       } catch (err) {
         logger.error(`Deleting client failed with error: ${err.message}`)
+
+        if (err instanceof CdpError) {
+          return cdpFailed(
+            err,
+            DELETE_OUTCOME_UNKNOWN_MESSAGE,
+            'CDP refused the delete request, so nothing was deleted'
+          )
+        }
+
         return Boom.internal()
       }
     }

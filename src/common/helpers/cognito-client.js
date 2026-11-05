@@ -28,7 +28,7 @@ const {
 const requestTimeoutMs = 120_000
 
 /**
- * A failed create, rotate or purge request. `outcomeUnknown` is true when CDP may
+ * A failed create, rotate, purge or delete request. `outcomeUnknown` is true when CDP may
  * still have made the change (timeout, network error, 5xx or unreadable
  * response), and false when CDP refused the request (4xx), so nothing changed.
  */
@@ -534,24 +534,17 @@ async function deleteCognitoCredential(serviceName, clientName) {
 
   logger.info(uri)
 
-  const { res, payload } = await Wreck.post(uri, {
-    headers: signed.headers,
-    json: true,
-    payload: signed.body,
+  const payload = await postToCdp('delete', uri, signed, {
     timeout: requestTimeoutMs
   })
 
-  // A deletion returns no clients
-  const remainingClients = toCognitoClients(payload)
-
-  if (
-    res.statusCode < 200 ||
-    res.statusCode >= 300 ||
-    remainingClients?.length !== 0
-  ) {
-    const message = `Failed to delete Cognito credentials. Status code: ${res.statusCode}`
+  // A deletion lists no clients. Any other reply is one we can't read, so the
+  // client may or may not have been deleted
+  if (toCognitoClients(payload)?.length !== 0) {
+    const message =
+      'Failed to delete Cognito credentials: CDP returned an unexpected response'
     logger.error(message)
-    throw new Error(message)
+    throw new CdpError(message, { outcomeUnknown: true })
   }
 
   logger.info('Successfully deleted Cognito credentials')
