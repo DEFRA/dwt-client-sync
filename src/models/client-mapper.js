@@ -33,7 +33,12 @@ export function toClientRecord(
   { clientId, clientName, secrets },
   tenantServiceName
 ) {
-  return { clientId, clientName, tenantServiceName, secrets }
+  return {
+    clientId,
+    clientName,
+    tenantServiceName,
+    ...(secrets && { secrets })
+  }
 }
 
 /**

@@ -31,6 +31,40 @@ describe('#toClientRecord', () => {
       ]
     })
   })
+
+  it('does not define secrets when they are null', () => {
+    expect(
+      toClientRecord({ ...cognitoClient, secrets: null }, tenantServiceName)
+    ).toStrictEqual({
+      clientId: 'client-1',
+      clientName: 'Client_One',
+      tenantServiceName
+    })
+  })
+
+  it('does not define secrets when they are undefined', () => {
+    expect(
+      toClientRecord(
+        { ...cognitoClient, secrets: undefined },
+        tenantServiceName
+      )
+    ).toStrictEqual({
+      clientId: 'client-1',
+      clientName: 'Client_One',
+      tenantServiceName
+    })
+  })
+
+  it('defines an empty secrets array when secrets are an empty array', () => {
+    expect(
+      toClientRecord({ ...cognitoClient, secrets: [] }, tenantServiceName)
+    ).toStrictEqual({
+      clientId: 'client-1',
+      clientName: 'Client_One',
+      tenantServiceName,
+      secrets: []
+    })
+  })
 })
 
 describe('#toClientResponse', () => {

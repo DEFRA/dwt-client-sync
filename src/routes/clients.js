@@ -298,7 +298,7 @@ export const clients = [
         } catch (err) {
           logger.error(`Failed to fetch credential metadata: ${err.message}`)
           // If secret metadata can't be fetched
-          // Save secrets as null,
+          // Save client to database without secret metadata
           // Will be repopulated next sync.
           await trySaveCreatedClient()
         }
@@ -444,7 +444,7 @@ export const clients = [
               toClientRecord({ ...rotatedClient, secrets }, tenantServiceName)
             )
           } catch (err) {
-            logger.error(`Failed to fetch credential metadata: ${err.message}`)
+            logger.error(`Saving rotated client failed: ${err.message}`)
           }
         }
 
@@ -457,7 +457,7 @@ export const clients = [
           )
           await trySaveRotatedClient(secrets)
         } catch (err) {
-          logger.error(`Saving rotated client failed: ${err.message}`)
+          logger.error(`Failed to fetch credential metadata: ${err.message}`)
           // If secret metadata can't be fetched
           // We don't have any information to save
           // Will be repopulated next sync.
