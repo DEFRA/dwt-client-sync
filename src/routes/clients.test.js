@@ -1183,6 +1183,29 @@ describe('DELETE Clients', () => {
     )
   })
 
+  it('refuses to delete when another client has exactly the same name, as CDP could delete that one instead', async () => {
+    const { listClients } = await import('#/services/client-directory.js')
+    vi.spyOn(clientService, 'findClient').mockResolvedValue(clientRecord)
+    listClients.mockResolvedValueOnce([
+      { clientId: clientRecord.clientId, clientName: clientRecord.clientName },
+      { clientId: 'other_client_id', clientName: clientRecord.clientName }
+    ])
+    vi.spyOn(deleteClientService, 'deleteClient')
+
+    const response = await server.inject({
+      method: 'DELETE',
+      url: `/clients/${clientRecord.tenantServiceName}/${clientRecord.clientId}`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(409)
+    expect(JSON.parse(response.payload).message).toBe(
+      'Another client has the same name, so nothing was deleted'
+    )
+    expect(deleteCognitoCredential).not.toHaveBeenCalled()
+    expect(deleteClientService.deleteClient).not.toHaveBeenCalled()
+  })
+
   it("deletes a client whose name differs only in case from another's, as CDP matches names exactly", async () => {
     const { listClients } = await import('#/services/client-directory.js')
     vi.spyOn(clientService, 'findClient').mockResolvedValue(clientRecord)

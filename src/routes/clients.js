@@ -3,7 +3,7 @@ import Joi from 'joi'
 import { clientSchema } from '#/common/helpers/validation.js'
 import { findClient, findClients, saveClient } from '#/services/clients.js'
 import { listClients } from '#/services/client-directory.js'
-import { isNameTaken } from '#/domain/client-names.js'
+import { isNameTaken, sharesExactName } from '#/domain/client-names.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { managedServices } from '#/common/helpers/managed-services.js'
 import { sync } from '#/services/client-sync.js'
@@ -355,6 +355,17 @@ export const clients = [
         // stored record left. CDP isn't asked, as it deletes by name, and
         // another client may have been given the name since
         if (clients.some((other) => other.clientId === clientId)) {
+          // CDP deletes by exact name, so another client with exactly this
+          // name could be deleted instead
+          if (sharesExactName(clients, client)) {
+            logger.error(
+              `Not deleting client ${clientId}: another client has the same name`
+            )
+            return Boom.conflict(
+              'Another client has the same name, so nothing was deleted'
+            )
+          }
+
           await deleteCognitoCredential(tenantServiceName, client.clientName)
         } else {
           logger.info(
