@@ -146,6 +146,12 @@ export const config = convict({
       default: '0 0 * * *',
       env: 'COGNITO_SYNC_SCHEDULE'
     },
+    syncOnStartup: {
+      doc: "Whether to sync once the server has started, as well as on the schedule. For local stacks, whose store starts out without the clients' secrets",
+      format: Boolean,
+      default: false,
+      env: 'COGNITO_SYNC_ON_STARTUP'
+    },
     region: {
       doc: 'AWS Cognito region',
       format: String,
