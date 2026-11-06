@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('node-cron', () => ({
   default: {
@@ -109,5 +109,64 @@ describe('scheduledClientSync', () => {
     scheduledClientSync.plugin.register(mockServer)
 
     expect(cron.schedule.mock.calls[0][0]).toBe('*/10 * * * *')
+  })
+
+  describe('when set to sync on startup', () => {
+    let startListener
+
+    const server = {
+      db: {},
+      locker: {},
+      events: { on: vi.fn() }
+    }
+
+    beforeEach(async () => {
+      vi.useFakeTimers()
+      config.get.mockReturnValue({
+        syncSchedule: '0 * * * *',
+        syncOnStartup: true
+      })
+
+      const { scheduledClientSync } = await import('./scheduled-client-sync.js')
+      scheduledClientSync.plugin.register(server)
+      startListener = server.events.on.mock.calls.find(
+        ([event]) => event === 'start'
+      )?.[1]
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('syncs once the server has started', async () => {
+      expect(sync).not.toHaveBeenCalled()
+
+      startListener()
+      await vi.runAllTimersAsync()
+
+      expect(sync).toHaveBeenCalledOnce()
+      expect(sync).toHaveBeenCalledWith(server.db, server.locker)
+    })
+
+    it('logs a failed sync, leaving it to the schedule', async () => {
+      sync.mockRejectedValueOnce(new Error('fake-cdp not ready'))
+
+      startListener()
+      await vi.runAllTimersAsync()
+
+      expect(sync).toHaveBeenCalledOnce()
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Startup client sync failed: fake-cdp not ready'
+      )
+    })
+  })
+
+  it("doesn't sync on startup unless set to", async () => {
+    const server = { db: {}, locker: {}, events: { on: vi.fn() } }
+    const { scheduledClientSync } = await import('./scheduled-client-sync.js')
+
+    scheduledClientSync.plugin.register(server)
+
+    expect(server.events.on).not.toHaveBeenCalled()
   })
 })
