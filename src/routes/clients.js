@@ -109,13 +109,17 @@ function clientNotFound(tenantServiceName, clientId) {
  * @param {{ clientId: string, clientName: string }} client
  * @returns {Boom.Boom} The error for the outcome
  */
-function purgeError(outcome, { clientId, clientName }) {
+function purgeError(outcome, { clientId }) {
   switch (outcome) {
     case PurgeOutcome.NOT_IN_CDP:
       return Boom.notFound(`Client '${clientId}' not found in CDP`)
     case PurgeOutcome.NAME_REUSED:
       return Boom.conflict(
         "The stored client is out of date: its name belongs to a different client, and that client's older secrets may have been removed"
+      )
+    case PurgeOutcome.NAME_SHARED:
+      return Boom.conflict(
+        'Another client has the same name, so no secret was removed'
       )
     case PurgeOutcome.OUTCOME_UNKNOWN:
       return badGateway(PURGE_OUTCOME_UNKNOWN_MESSAGE, 'unknown')

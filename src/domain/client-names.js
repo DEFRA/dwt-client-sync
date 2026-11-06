@@ -25,4 +25,18 @@ function isNameTaken(clients, name) {
   return clients.some((client) => sameName(client.clientName, name))
 }
 
-export { isNameTaken }
+/**
+ * CDP finds a client by its exact name, so another client with exactly the
+ * same name could be acted on instead
+ * @param {{ clientId: string, clientName: string }[]} clients
+ * @param {{ clientId: string, clientName: string }} client
+ * @returns {boolean} Whether another of the clients has exactly this client's
+ * name
+ */
+function sharesExactName(clients, { clientId, clientName }) {
+  return clients.some(
+    (other) => other.clientId !== clientId && other.clientName === clientName
+  )
+}
+
+export { isNameTaken, sharesExactName }

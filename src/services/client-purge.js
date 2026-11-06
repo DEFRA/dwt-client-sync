@@ -1,5 +1,7 @@
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { purgeCognitoCredential } from '#/common/helpers/cognito-client.js'
+import { listClients } from '#/services/client-directory.js'
+import { sharesExactName } from '#/domain/client-names.js'
 import { PurgeOutcome, purgeResult } from '#/domain/client-secrets.js'
 
 const logger = createLogger()
@@ -13,6 +15,15 @@ const logger = createLogger()
  */
 async function purgeOldSecret(tenantServiceName, client) {
   const { clientId } = client
+
+  // CDP purges by exact name, so another client with exactly this name could
+  // lose its secret instead
+  const clients = await listClients(tenantServiceName)
+
+  if (sharesExactName(clients, client)) {
+    logger.error(`Not purging client ${clientId}: ${PurgeOutcome.NAME_SHARED}`)
+    return PurgeOutcome.NAME_SHARED
+  }
 
   // CDP always keeps the newest secret, so the client can't be left without
   // one, and with only one secret this does nothing

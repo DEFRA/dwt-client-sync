@@ -965,6 +965,11 @@ describe('POST Clients purge', () => {
       "The stored client is out of date: its name belongs to a different client, and that client's older secrets may have been removed"
     ],
     [
+      'NAME_SHARED',
+      409,
+      'Another client has the same name, so no secret was removed'
+    ],
+    [
       'OUTCOME_UNKNOWN',
       502,
       'Purge outcome unknown: the older secret may have been removed. It is safe to try again.'
