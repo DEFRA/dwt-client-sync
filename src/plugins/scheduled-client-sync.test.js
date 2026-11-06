@@ -148,29 +148,15 @@ describe('scheduledClientSync', () => {
       expect(sync).toHaveBeenCalledWith(server.db, server.locker)
     })
 
-    it('tries again while the services it syncs from start', async () => {
-      sync
-        .mockRejectedValueOnce(new Error('fake-cdp not ready'))
-        .mockResolvedValueOnce({ totalServicesProcessed: 1, services: [] })
+    it('logs a failed sync, leaving it to the schedule', async () => {
+      sync.mockRejectedValueOnce(new Error('fake-cdp not ready'))
 
       startListener()
       await vi.runAllTimersAsync()
 
-      expect(sync).toHaveBeenCalledTimes(2)
+      expect(sync).toHaveBeenCalledOnce()
       expect(mockLogger.error).toHaveBeenCalledWith(
-        'Startup client sync attempt 1 of 5 failed: fake-cdp not ready'
-      )
-    })
-
-    it('gives up after five attempts, leaving it to the schedule', async () => {
-      sync.mockRejectedValue(new Error('fake-cdp not ready'))
-
-      startListener()
-      await vi.runAllTimersAsync()
-
-      expect(sync).toHaveBeenCalledTimes(5)
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'Startup client sync gave up. The next scheduled sync will store the clients'
+        'Startup client sync failed: fake-cdp not ready'
       )
     })
   })
