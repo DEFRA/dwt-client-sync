@@ -1,7 +1,6 @@
 /**
  * Client names must be unique ignoring case, so two providers can't end up
- * with names that differ only in case. CDP's create skips a name that
- * already exists, but its docs don't say whether it ignores case.
+ * with names that differ only in case.
  */
 
 /**
@@ -27,16 +26,17 @@ function isNameTaken(clients, name) {
 }
 
 /**
+ * CDP finds a client by its exact name, so another client with exactly the
+ * same name could be acted on instead
  * @param {{ clientId: string, clientName: string }[]} clients
  * @param {{ clientId: string, clientName: string }} client
- * @returns {boolean} Whether another of the clients has this client's name,
- * ignoring case
+ * @returns {boolean} Whether another of the clients has exactly this client's
+ * name
  */
-function sharesName(clients, { clientId, clientName }) {
+function sharesExactName(clients, { clientId, clientName }) {
   return clients.some(
-    (other) =>
-      other.clientId !== clientId && sameName(other.clientName, clientName)
+    (other) => other.clientId !== clientId && other.clientName === clientName
   )
 }
 
-export { isNameTaken, sharesName }
+export { isNameTaken, sharesExactName }
