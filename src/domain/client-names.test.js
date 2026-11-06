@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isNameTaken, sharesName } from './client-names.js'
+import { isNameTaken, sharesExactName } from './client-names.js'
 
 const clients = [
   { clientId: 'id-1', clientName: 'Acme_Waste' },
@@ -23,20 +23,26 @@ describe('isNameTaken', () => {
   })
 })
 
-describe('sharesName', () => {
+describe('sharesExactName', () => {
   it('ignores the client itself', () => {
-    expect(sharesName(clients, clients[0])).toBe(false)
+    expect(sharesExactName(clients, clients[0])).toBe(false)
   })
 
-  it.each([['Acme_Waste'], ['ACME_waste']])(
-    'finds another client named %s, ignoring case',
-    (otherName) => {
-      const withOther = [
-        ...clients,
-        { clientId: 'id-3', clientName: otherName }
-      ]
+  it('finds another client with exactly the same name', () => {
+    const withOther = [
+      ...clients,
+      { clientId: 'id-3', clientName: clients[0].clientName }
+    ]
 
-      expect(sharesName(withOther, clients[0])).toBe(true)
-    }
-  )
+    expect(sharesExactName(withOther, clients[0])).toBe(true)
+  })
+
+  it('ignores a name that differs only in case, as CDP matches names exactly', () => {
+    const withOther = [
+      ...clients,
+      { clientId: 'id-3', clientName: clients[0].clientName.toUpperCase() }
+    ]
+
+    expect(sharesExactName(withOther, clients[0])).toBe(false)
+  })
 })

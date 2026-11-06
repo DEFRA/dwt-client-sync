@@ -47,23 +47,32 @@ describe('purgeOldSecret', () => {
     )
   })
 
-  it.each([['Test_Client'], ['test_CLIENT']])(
-    'does not purge when another client is named %s',
-    async (otherName) => {
-      listClients.mockResolvedValue([
-        client,
-        { ...otherClient, clientName: otherName }
-      ])
+  it('does not purge when another client has exactly the same name', async () => {
+    listClients.mockResolvedValue([
+      client,
+      { ...otherClient, clientName: 'Test_Client' }
+    ])
 
-      const outcome = await purgeOldSecret(tenantServiceName, client)
+    const outcome = await purgeOldSecret(tenantServiceName, client)
 
-      expect(outcome).toBe(PurgeOutcome.NAME_SHARED)
-      expect(purgeCognitoCredential).not.toHaveBeenCalled()
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        `Not purging client ${clientId}: another client has the same name`
-      )
-    }
-  )
+    expect(outcome).toBe(PurgeOutcome.NAME_SHARED)
+    expect(purgeCognitoCredential).not.toHaveBeenCalled()
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      `Not purging client ${clientId}: another client has the same name`
+    )
+  })
+
+  it("purges when another client's name differs only in case, as CDP matches names exactly", async () => {
+    listClients.mockResolvedValue([
+      client,
+      { ...otherClient, clientName: 'test_CLIENT' }
+    ])
+
+    const outcome = await purgeOldSecret(tenantServiceName, client)
+
+    expect(outcome).toBe(PurgeOutcome.PURGED)
+    expect(purgeCognitoCredential).toHaveBeenCalled()
+  })
 
   it("returns and logs the outcome of CDP's response", async () => {
     purgeCognitoCredential.mockResolvedValue([])
