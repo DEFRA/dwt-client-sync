@@ -3,7 +3,7 @@ import Joi from 'joi'
 import { clientSchema } from '#/common/helpers/validation.js'
 import { findClient, findClients, saveClient } from '#/services/clients.js'
 import { listClients } from '#/services/client-directory.js'
-import { isNameTaken, sharesName } from '#/domain/client-names.js'
+import { isNameTaken } from '#/domain/client-names.js'
 import { createLogger } from '#/common/helpers/logging/logger.js'
 import { managedServices } from '#/common/helpers/managed-services.js'
 import { sync } from '#/services/client-sync.js'
@@ -352,20 +352,9 @@ export const clients = [
         const clients = await listClients(tenantServiceName)
 
         // A client already gone from Cognito, as after a retry, only has its
-        // stored record left. CDP isn't asked, as another client may have been
-        // given the name since
+        // stored record left. CDP isn't asked, as it deletes by name, and
+        // another client may have been given the name since
         if (clients.some((other) => other.clientId === clientId)) {
-          // CDP deletes by name, so it could delete another client with this
-          // name instead
-          if (sharesName(clients, client)) {
-            logger.error(
-              `Not deleting client ${clientId}: another client has the same name`
-            )
-            return Boom.conflict(
-              `Another client is named '${client.clientName}' (case insensitive), and CDP deletes clients by name, so nothing was deleted`
-            )
-          }
-
           await deleteCognitoCredential(tenantServiceName, client.clientName)
         } else {
           logger.info(
@@ -391,7 +380,7 @@ export const clients = [
           return cdpFailed(
             err,
             DELETE_OUTCOME_UNKNOWN_MESSAGE,
-            'CDP refused the delete request, so nothing was deleted'
+            'The delete request was refused, so nothing was deleted'
           )
         }
 

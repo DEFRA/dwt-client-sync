@@ -1183,14 +1183,17 @@ describe('DELETE Clients', () => {
     )
   })
 
-  it('refuses to delete when another client shares the name, as CDP deletes by name', async () => {
+  it("deletes a client whose name differs only in case from another's, as CDP matches names exactly", async () => {
     const { listClients } = await import('#/services/client-directory.js')
     vi.spyOn(clientService, 'findClient').mockResolvedValue(clientRecord)
     listClients.mockResolvedValueOnce([
       { clientId: clientRecord.clientId, clientName: clientRecord.clientName },
       { clientId: 'other_client_id', clientName: 'test_client' }
     ])
-    vi.spyOn(deleteClientService, 'deleteClient')
+    deleteCognitoCredential.mockResolvedValueOnce()
+    vi.spyOn(deleteClientService, 'deleteClient').mockResolvedValueOnce({
+      deletedCount: 1
+    })
 
     const response = await server.inject({
       method: 'DELETE',
@@ -1198,13 +1201,11 @@ describe('DELETE Clients', () => {
       auth
     })
 
-    expect(response.statusCode).toBe(409)
-    expect(JSON.parse(response.payload).message).toBe(
-      "Another client is named 'Test_Client' (case insensitive), and CDP deletes clients by name, so nothing was deleted"
+    expect(response.statusCode).toBe(204)
+    expect(deleteCognitoCredential).toHaveBeenCalledWith(
+      clientRecord.tenantServiceName,
+      clientRecord.clientName
     )
-    expect(listClients).toHaveBeenCalledWith(clientRecord.tenantServiceName)
-    expect(deleteCognitoCredential).not.toHaveBeenCalled()
-    expect(deleteClientService.deleteClient).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -1212,7 +1213,7 @@ describe('DELETE Clients', () => {
       'CDP refuses the request',
       false,
       'failure',
-      'CDP refused the delete request, so nothing was deleted'
+      'The delete request was refused, so nothing was deleted'
     ],
     [
       'the outcome is unknown',
