@@ -117,10 +117,6 @@ function purgeError(outcome, { clientId, clientName }) {
       return Boom.conflict(
         "The stored client is out of date: its name belongs to a different client, and that client's older secrets may have been removed"
       )
-    case PurgeOutcome.NAME_SHARED:
-      return Boom.conflict(
-        `Another client is named '${clientName}' (case insensitive), and CDP removes secrets by name, so no secret was removed`
-      )
     case PurgeOutcome.OUTCOME_UNKNOWN:
       return badGateway(PURGE_OUTCOME_UNKNOWN_MESSAGE, 'unknown')
     default:

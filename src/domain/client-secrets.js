@@ -11,7 +11,6 @@
 const PurgeOutcome = Object.freeze({
   PURGED: 'purged',
   NOT_IN_CDP: 'not in CDP',
-  NAME_SHARED: 'another client has the same name',
   NAME_REUSED: 'stored name belongs to a different client',
   OUTCOME_UNKNOWN: "CDP's purge response can't be read"
 })
