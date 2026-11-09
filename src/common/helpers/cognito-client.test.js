@@ -874,16 +874,22 @@ describe('deleteCognitoCredential', () => {
     expect(options.timeout).toBe(120_000)
   })
 
-  it('throws an error when the backend returns a non-200 status', async () => {
+  it('reports a known failure when CDP returns a non-2xx status without throwing', async () => {
     mockPost.mockResolvedValue({
-      res: { statusCode: 500 },
+      res: { statusCode: 302 },
       payload: {}
     })
 
-    await expect(
-      deleteCognitoCredential('my-service', 'my_client')
-    ).rejects.toThrow('Failed to delete Cognito credentials. Status code: 500')
-    expect(mockSign).toHaveBeenCalledTimes(1)
+    const error = await deleteCognitoCredential(
+      'my-service',
+      'my_client'
+    ).catch((err) => err)
+
+    expect(error).toBeInstanceOf(CdpError)
+    expect(error.outcomeUnknown).toBe(false)
+    expect(error.message).toBe(
+      'Failed to delete Cognito credentials. Status code: 302'
+    )
   })
 
   it.each([
@@ -905,14 +911,61 @@ describe('deleteCognitoCredential', () => {
         payload
       })
 
-      await expect(
-        deleteCognitoCredential('my-service', 'my_client')
-      ).rejects.toThrow(
-        'Failed to delete Cognito credentials. Status code: 200'
+      const error = await deleteCognitoCredential(
+        'my-service',
+        'my_client'
+      ).catch((err) => err)
+
+      expect(error).toBeInstanceOf(CdpError)
+      expect(error.outcomeUnknown).toBe(true)
+      expect(error.message).toBe(
+        'Failed to delete Cognito credentials: CDP returned an unexpected response'
       )
       expect(mockSign).toHaveBeenCalledTimes(1)
     }
   )
+
+  it('reports a known failure when CDP refuses the request', async () => {
+    mockPost.mockRejectedValue(
+      new Boom.Boom('Response Error: 403', {
+        statusCode: 403,
+        data: { isResponseError: true }
+      })
+    )
+
+    const error = await deleteCognitoCredential(
+      'my-service',
+      'my_client'
+    ).catch((err) => err)
+
+    expect(error).toBeInstanceOf(CdpError)
+    expect(error.outcomeUnknown).toBe(false)
+    expect(error.message).toBe(
+      'Failed to delete Cognito credentials: Response Error: 403'
+    )
+  })
+
+  it.each([
+    [
+      'CDP returns a server error',
+      new Boom.Boom('Response Error: 503', {
+        statusCode: 503,
+        data: { isResponseError: true }
+      })
+    ],
+    ['the request times out', Boom.gatewayTimeout('Client request timeout')],
+    ['the connection fails', new Error('socket hang up')]
+  ])('reports an unknown outcome when %s', async (_, err) => {
+    mockPost.mockRejectedValue(err)
+
+    const error = await deleteCognitoCredential(
+      'my-service',
+      'my_client'
+    ).catch((e) => e)
+
+    expect(error).toBeInstanceOf(CdpError)
+    expect(error.outcomeUnknown).toBe(true)
+  })
 })
 
 describe('getCognitoCredential', () => {
