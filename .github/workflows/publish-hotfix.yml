@@ -14,8 +14,8 @@ permissions:
   pull-requests: write
 
 env:
-  AWS_REGION: eu-west-2
-  AWS_ACCOUNT_ID: '094954420758'
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
 
 jobs:
   build:
@@ -36,11 +36,6 @@ jobs:
       - run: npm ci
       - run: npm test
 
-      - name: Publish Hot Fix
-        uses: DEFRA/cdp-build-action/build-hotfix@main
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v8.4.1 #  (or check latest version on https://github.com/marketplace/actions/official-sonarqube-scan)
         with:
@@ -48,3 +43,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: Publish Hot Fix
+        uses: DEFRA/cdp-build-action/build-hotfix@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
