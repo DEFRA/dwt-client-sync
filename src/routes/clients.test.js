@@ -967,7 +967,7 @@ describe('POST Clients purge', () => {
     [
       'NAME_SHARED',
       409,
-      "Another client is named 'Test_Client' (case insensitive), and CDP removes secrets by name, so no secret was removed"
+      'Another client has the same name, so no secret was removed'
     ],
     [
       'OUTCOME_UNKNOWN',
@@ -1098,7 +1098,16 @@ describe('DELETE Clients', () => {
   }
   const auth = { strategy: 'basic', credentials: { username: 'test' } }
 
+  const listsClient = async () => {
+    const { listClients } = await import('#/services/client-directory.js')
+    listClients.mockResolvedValueOnce([
+      { clientId: clientRecord.clientId, clientName: clientRecord.clientName }
+    ])
+    return listClients
+  }
+
   it('successfully deletes and syncs an existant client', async () => {
+    await listsClient()
     vi.spyOn(clientService, 'findClient').mockResolvedValue(clientRecord)
     deleteCognitoCredential.mockResolvedValueOnce(true)
     vi.spyOn(deleteClientService, 'deleteClient').mockResolvedValueOnce({
@@ -1158,6 +1167,7 @@ describe('DELETE Clients', () => {
   })
 
   it('raises an error if deleteCognitoCredentials fails', async () => {
+    await listsClient()
     vi.spyOn(clientService, 'findClient').mockResolvedValue(clientRecord)
     deleteCognitoCredential.mockRejectedValue(new Error('Cognito error'))
 
@@ -1173,7 +1183,142 @@ describe('DELETE Clients', () => {
     )
   })
 
+  it('refuses to delete when another client has exactly the same name, as CDP could delete that one instead', async () => {
+    const { listClients } = await import('#/services/client-directory.js')
+    vi.spyOn(clientService, 'findClient').mockResolvedValue(clientRecord)
+    listClients.mockResolvedValueOnce([
+      { clientId: clientRecord.clientId, clientName: clientRecord.clientName },
+      { clientId: 'other_client_id', clientName: clientRecord.clientName }
+    ])
+    vi.spyOn(deleteClientService, 'deleteClient')
+
+    const response = await server.inject({
+      method: 'DELETE',
+      url: `/clients/${clientRecord.tenantServiceName}/${clientRecord.clientId}`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(409)
+    expect(JSON.parse(response.payload).message).toBe(
+      'Another client has the same name, so nothing was deleted'
+    )
+    expect(deleteCognitoCredential).not.toHaveBeenCalled()
+    expect(deleteClientService.deleteClient).not.toHaveBeenCalled()
+  })
+
+  it("deletes a client whose name differs only in case from another's, as CDP matches names exactly", async () => {
+    const { listClients } = await import('#/services/client-directory.js')
+    vi.spyOn(clientService, 'findClient').mockResolvedValue(clientRecord)
+    listClients.mockResolvedValueOnce([
+      { clientId: clientRecord.clientId, clientName: clientRecord.clientName },
+      { clientId: 'other_client_id', clientName: 'test_client' }
+    ])
+    deleteCognitoCredential.mockResolvedValueOnce()
+    vi.spyOn(deleteClientService, 'deleteClient').mockResolvedValueOnce({
+      deletedCount: 1
+    })
+
+    const response = await server.inject({
+      method: 'DELETE',
+      url: `/clients/${clientRecord.tenantServiceName}/${clientRecord.clientId}`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(204)
+    expect(deleteCognitoCredential).toHaveBeenCalledWith(
+      clientRecord.tenantServiceName,
+      clientRecord.clientName
+    )
+  })
+
+  it.each([
+    [
+      'CDP refuses the request',
+      false,
+      'failure',
+      'The delete request was refused, so nothing was deleted'
+    ],
+    [
+      'the outcome is unknown',
+      true,
+      'unknown',
+      'Delete outcome unknown: the client may have been deleted. It is safe to try again.'
+    ]
+  ])(
+    'returns a 502, keeping the stored client, when %s',
+    async (_, outcomeUnknown, outcome, message) => {
+      await listsClient()
+      vi.spyOn(clientService, 'findClient').mockResolvedValue(clientRecord)
+      deleteCognitoCredential.mockRejectedValueOnce(
+        new MockCdpError('Failed to delete Cognito credentials', {
+          outcomeUnknown
+        })
+      )
+      vi.spyOn(deleteClientService, 'deleteClient')
+
+      const response = await server.inject({
+        method: 'DELETE',
+        url: `/clients/${clientRecord.tenantServiceName}/${clientRecord.clientId}`,
+        auth
+      })
+
+      expect(response.statusCode).toBe(502)
+      expect(JSON.parse(response.payload)).toMatchObject({ message, outcome })
+      expect(deleteClientService.deleteClient).not.toHaveBeenCalled()
+    }
+  )
+
+  it('only deletes the stored record of a client already gone from Cognito, as after a retry', async () => {
+    vi.spyOn(clientService, 'findClient').mockResolvedValue(clientRecord)
+    vi.spyOn(deleteClientService, 'deleteClient').mockResolvedValueOnce({
+      deletedCount: 1
+    })
+
+    const response = await server.inject({
+      method: 'DELETE',
+      url: `/clients/${clientRecord.tenantServiceName}/${clientRecord.clientId}`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(204)
+    expect(deleteCognitoCredential).not.toHaveBeenCalled()
+    expect(deleteClientService.deleteClient).toHaveBeenCalledWith(
+      expect.anything(),
+      clientRecord.clientId,
+      clientRecord.tenantServiceName
+    )
+  })
+
+  it("raises an error, deleting nothing, if Cognito's client list can't be read", async () => {
+    const { listClients } = await import('#/services/client-directory.js')
+    vi.spyOn(clientService, 'findClient').mockResolvedValue(clientRecord)
+    listClients.mockRejectedValueOnce(new Error('Cognito down'))
+    vi.spyOn(deleteClientService, 'deleteClient')
+
+    const response = await server.inject({
+      method: 'DELETE',
+      url: `/clients/${clientRecord.tenantServiceName}/${clientRecord.clientId}`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(500)
+    expect(deleteCognitoCredential).not.toHaveBeenCalled()
+    expect(deleteClientService.deleteClient).not.toHaveBeenCalled()
+  })
+
+  it('rejects a client id CDP could not have issued', async () => {
+    const response = await server.inject({
+      method: 'DELETE',
+      url: `/clients/${clientRecord.tenantServiceName}/not%20an%20id`,
+      auth
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(deleteCognitoCredential).not.toHaveBeenCalled()
+  })
+
   it('succeeds but logs an error if deleting in cognito succeeds but cache deletion fails', async () => {
+    await listsClient()
     vi.spyOn(clientService, 'findClient').mockResolvedValue(clientRecord)
     deleteCognitoCredential.mockResolvedValue(true)
     vi.spyOn(deleteClientService, 'deleteClient').mockRejectedValue(
