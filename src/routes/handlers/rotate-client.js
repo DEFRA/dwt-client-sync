@@ -86,31 +86,7 @@ export async function rotateClientHandler(request, h) {
       `Rotated client secret for client ${clientId} of ${tenantServiceName}`
     )
 
-    const trySaveRotatedClient = async (secrets) => {
-      try {
-        await saveClient(
-          db,
-          toClientRecord({ ...rotatedClient, secrets }, tenantServiceName)
-        )
-      } catch (err) {
-        logger.error(`Saving rotated client failed: ${err.message}`)
-      }
-    }
-
-    // Save the updated secrets to the database
-    try {
-      // Fetch secret metadata that isn't initially returned
-      const { secrets } = await getCognitoCredential(
-        tenantServiceName,
-        rotatedClient.clientId
-      )
-      await trySaveRotatedClient(secrets)
-    } catch (err) {
-      logger.error(`Failed to fetch credential metadata: ${err.message}`)
-      // If secret metadata can't be fetched
-      // We don't have any information to save
-      // Will be repopulated next sync.
-    }
+    await saveRotatedClient(db, tenantServiceName, rotatedClient)
 
     // Only time the new secret is available, so it must be returned
     return h.response(toClientCredentialsResponse(rotatedClient))
@@ -126,5 +102,20 @@ export async function rotateClientHandler(request, h) {
     }
 
     return Boom.internal()
+  }
+}
+
+async function saveRotatedClient(db, tenantServiceName, rotatedClient) {
+  try {
+    const { secrets } = await getCognitoCredential(
+      tenantServiceName,
+      rotatedClient.clientId
+    )
+    await saveClient(
+      db,
+      toClientRecord({ ...rotatedClient, secrets }, tenantServiceName)
+    )
+  } catch (err) {
+    logger.error(`Failed to fetch credential metadata: ${err.message}`)
   }
 }
