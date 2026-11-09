@@ -20,6 +20,15 @@ const {
   protocol
 } = config.get('cognito')
 
+const HTTP_STATUS_CODES = Object.freeze({
+  OK: 200,
+  MULTIPLE_CHOICES: 300,
+  BAD_REQUEST: 400,
+  SERVER_ERROR: 500,
+  TOO_MANY_REQUESTS: 429
+})
+
+const PATH_SERVICE_NAME_REPLACMENT = '{service-name}'
 // CDP's docs say to allow up to 120 seconds for a response, so this only ends
 // a call that will never get one, such as on a connection that dies silently.
 // Sync holds its lock while it lists, so a hung list would stop every later
@@ -93,10 +102,12 @@ function fromClientDetails(details) {
  */
 function toCognitoClients(payload) {
   const clientDetails = payload?.client_details
-  if (!Array.isArray(clientDetails)) return undefined
+  if (!Array.isArray(clientDetails)) {
+    return undefined
+  }
   const clients = clientDetails.map(fromClientDetails)
   // A client that isn't an object can't be read, so the page can't be trusted
-  return clients.some((client) => client === undefined) ? undefined : clients
+  return clients.includes(undefined) ? undefined : clients
 }
 
 // CDP's response for the single-client lookup
@@ -160,10 +171,12 @@ async function postToCdp(action, uri, signed, options = {}) {
   } catch (err) {
     // Wreck throws for 4xx/5xx responses as well as timeouts, network and
     // parse errors. Only a 4xx means CDP refused the request
-    const statusCode = err.data?.isResponseError
+    const caughtStatusCode = err.data?.isResponseError
       ? err.output?.statusCode
       : undefined
-    const refused = statusCode >= 400 && statusCode < 500
+    const refused =
+      caughtStatusCode >= HTTP_STATUS_CODES.BAD_REQUEST &&
+      caughtStatusCode < HTTP_STATUS_CODES.SERVER_ERROR
     const message = `Failed to ${action} Cognito credentials: ${err.message}`
     const details = err.data?.isResponseError
       ? describeErrorResponse(err.data.headers, err.data.payload)
@@ -172,9 +185,12 @@ async function postToCdp(action, uri, signed, options = {}) {
     throw new CdpError(message, { outcomeUnknown: !refused, cause: err })
   }
 
-  const { statusCode } = response.res
-  if (statusCode < 200 || statusCode >= 300) {
-    const message = `Failed to ${action} Cognito credentials. Status code: ${statusCode}`
+  const { statusCode: responseStatusCode } = response.res
+  if (
+    responseStatusCode < HTTP_STATUS_CODES.OK ||
+    responseStatusCode >= HTTP_STATUS_CODES.MULTIPLE_CHOICES
+  ) {
+    const message = `Failed to ${action} Cognito credentials. Status code: ${responseStatusCode}`
     const details = describeErrorResponse(
       response.res.headers,
       response.payload
@@ -208,7 +224,8 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // Wreck throws a Boom error for a 4xx or 5xx response, marked isResponseError
 const isThrottled = (err) =>
-  err.data?.isResponseError && err.output?.statusCode === 429
+  err.data?.isResponseError &&
+  err.output?.statusCode === HTTP_STATUS_CODES.TOO_MANY_REQUESTS
 
 /**
  * Gets one page of the clients in a service's user pool.
@@ -217,7 +234,10 @@ const isThrottled = (err) =>
  * @returns {Promise<object>} CDP's response
  */
 async function fetchClientsPage(serviceName, { pageSize, nextToken }) {
-  const path = listClientsPath.replace('{service-name}', serviceName)
+  const path = listClientsPath.replace(
+    PATH_SERVICE_NAME_REPLACMENT,
+    serviceName
+  )
   const query = {
     page_size: String(pageSize),
     ...(nextToken && { next_token: nextToken })
@@ -251,7 +271,7 @@ async function fetchClientsPage(serviceName, { pageSize, nextToken }) {
     timeout: requestTimeoutMs
   })
 
-  if (res.statusCode !== 200) {
+  if (res.statusCode !== HTTP_STATUS_CODES.OK) {
     throw new Error(
       `Failed to fetch Cognito credentials. Status code: ${res.statusCode}`
     )
@@ -384,7 +404,10 @@ async function allCognitoCredentials(serviceName) {
 async function createCognitoCredential(serviceName, newClientName) {
   logger.info('Creating new Cognito credentials')
 
-  const path = createClientsPath.replace('{service-name}', serviceName)
+  const path = createClientsPath.replace(
+    PATH_SERVICE_NAME_REPLACMENT,
+    serviceName
+  )
 
   const requestToSign = new HttpRequest({
     method: 'POST',
@@ -426,7 +449,7 @@ async function rotateCognitoCredential(serviceName, clientName) {
   logger.info('Rotating Cognito credentials')
 
   const path = rotateClientsPath.replace(
-    '{service-name}',
+    PATH_SERVICE_NAME_REPLACMENT,
     encodeURIComponent(serviceName)
   )
 
@@ -473,7 +496,7 @@ async function purgeCognitoCredential(serviceName, clientName) {
   logger.info('Purging old Cognito credentials')
 
   const path = purgeClientsPath.replace(
-    '{service-name}',
+    PATH_SERVICE_NAME_REPLACMENT,
     encodeURIComponent(serviceName)
   )
 
@@ -588,7 +611,10 @@ async function getCognitoCredential(serviceName, clientId) {
 
   const client = toCognitoClient(payload)
 
-  if (res.statusCode < 200 || res.statusCode >= 300) {
+  if (
+    res.statusCode < HTTP_STATUS_CODES.OK ||
+    res.statusCode >= HTTP_STATUS_CODES.MULTIPLE_CHOICES
+  ) {
     const message = `Failed to fetch Cognito client. Status code: ${res.statusCode}`
     logger.error(message)
     throw new Error(message)
