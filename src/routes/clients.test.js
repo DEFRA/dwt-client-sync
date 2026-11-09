@@ -767,6 +767,21 @@ describe('POST Clients rotate', () => {
     )
   })
 
+  it('saves the rotated client with its secret metadata', async () => {
+    const secrets = [{ id: 'secret_id', createdAt: '2026-11-09T12:00:00Z' }]
+    vi.spyOn(clientService, 'saveClient').mockResolvedValue()
+    getCognitoCredential.mockResolvedValue({ ...rotatedClient, secrets })
+
+    await server.inject({ method: 'POST', url, auth })
+
+    expect(clientService.saveClient).toHaveBeenCalledWith(expect.anything(), {
+      clientId,
+      clientName: 'Test_Client',
+      tenantServiceName,
+      secrets
+    })
+  })
+
   it('returns only the client fields, not anything else', async () => {
     rotateCognitoCredential.mockResolvedValue([
       { ...rotatedClient, createdAt: '2026-10-14T12:00:00Z' }
@@ -1079,6 +1094,266 @@ describe('POST Clients purge', () => {
     expect(response.statusCode).toBe(400)
     expect(clientService.findClient).not.toHaveBeenCalled()
     expect(purgeService.purgeOldSecret).not.toHaveBeenCalled()
+  })
+
+  it('returns a 401 error without credentials', async () => {
+    const response = await server.inject({ method: 'POST', url })
+
+    expect(response.statusCode).toBe(401)
+  })
+})
+
+describe('POST Clients replace', () => {
+  const auth = { strategy: 'basic', credentials: { username: 'test' } }
+  const tenantServiceName = 'waste-movement-external-api'
+  const clientId = 'my_client_id'
+  const url = `/clients/${tenantServiceName}/${clientId}/replace`
+  const storedClient = {
+    clientName: 'Test_Client',
+    clientId,
+    tenantServiceName
+  }
+  const rotatedClient = {
+    clientName: 'Test_Client',
+    clientId,
+    clientSecret: 'my_new_client_secret',
+    createdAt: '2026-11-09T12:00:00Z'
+  }
+  // What the endpoint returns for rotatedClient
+  const newCredentials = {
+    clientName: 'Test_Client',
+    clientId,
+    clientSecret: 'my_new_client_secret'
+  }
+  const secrets = [{ id: 'new_secret_id', createdAt: '2026-11-09T12:00:00Z' }]
+  let server
+  let clientService
+  let replaceService
+  let getCognitoCredential
+  let ReplaceOutcome
+  let RotateOutcome
+
+  beforeAll(async () => {
+    clientService = await import('#/services/clients.js')
+    replaceService = await import('#/services/client-replace.js')
+    ;({ getCognitoCredential } =
+      await import('#/common/helpers/cognito-client.js'))
+    ;({ ReplaceOutcome, RotateOutcome } =
+      await import('#/domain/client-secrets.js'))
+    const { createServer } = await import('#/server.js')
+
+    server = await createServer()
+    await server.initialize()
+  })
+
+  beforeEach(() => {
+    vi.spyOn(clientService, 'findClient').mockResolvedValue(storedClient)
+    vi.spyOn(clientService, 'saveClient').mockResolvedValue()
+    vi.spyOn(replaceService, 'replaceSecret').mockResolvedValue({
+      outcome: ReplaceOutcome.REPLACED,
+      rotatedClient
+    })
+    getCognitoCredential.mockResolvedValue({ ...rotatedClient, secrets })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const inject = () => server.inject({ method: 'POST', url, auth })
+  const payload = (response) => JSON.parse(response.payload)
+
+  it('replaces the stored client and returns its new credentials', async () => {
+    const response = await inject()
+
+    expect(response.statusCode).toBe(200)
+    expect(payload(response)).toStrictEqual(newCredentials)
+    expect(replaceService.replaceSecret).toHaveBeenCalledWith(
+      tenantServiceName,
+      storedClient
+    )
+  })
+
+  it('saves the client with its new secret metadata', async () => {
+    await inject()
+
+    expect(clientService.saveClient).toHaveBeenCalledWith(expect.anything(), {
+      ...storedClient,
+      secrets
+    })
+  })
+
+  it('tells clients not to store the response', async () => {
+    const response = await inject()
+
+    expect(response.headers['cache-control']).toBe('no-store')
+  })
+
+  it.each([
+    ['OLD_SECRET_KEPT', 'failure'],
+    ['PURGE_OUTCOME_UNKNOWN', 'unknown']
+  ])(
+    'returns a 502 error with the new credentials when the outcome is %s',
+    async (replaceOutcome, outcome) => {
+      replaceService.replaceSecret.mockResolvedValue({
+        outcome: ReplaceOutcome[replaceOutcome],
+        rotatedClient
+      })
+
+      const response = await inject()
+
+      expect(response.statusCode).toBe(502)
+      expect(payload(response)).toStrictEqual({
+        statusCode: 502,
+        error: 'Bad Gateway',
+        ...newCredentials,
+        message:
+          'A new secret was issued, but the old secret may still be active. Purge the old secret to finish replacing it.',
+        outcome
+      })
+      expect(response.headers['cache-control']).toBe('no-store')
+      expect(clientService.saveClient).toHaveBeenCalled()
+    }
+  )
+
+  it('returns the new credentials in the 502 when the purge fails, through the real services', async () => {
+    const { rotateCognitoCredential, purgeCognitoCredential } =
+      await import('#/common/helpers/cognito-client.js')
+    replaceService.replaceSecret.mockRestore()
+    rotateCognitoCredential.mockResolvedValueOnce([rotatedClient])
+    purgeCognitoCredential.mockRejectedValueOnce(
+      new MockCdpError('Refused', { outcomeUnknown: false })
+    )
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(502)
+    expect(payload(response)).toMatchObject({
+      ...newCredentials,
+      outcome: 'failure'
+    })
+    expect(rotateCognitoCredential).toHaveBeenCalledWith(
+      tenantServiceName,
+      'Test_Client'
+    )
+    expect(purgeCognitoCredential).toHaveBeenCalledWith(
+      tenantServiceName,
+      'Test_Client'
+    )
+  })
+
+  it('returns a 404 error without replacing when the client is not stored', async () => {
+    clientService.findClient.mockResolvedValue(null)
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(404)
+    expect(payload(response).message).toBe(
+      `Client '${clientId}' not found for tenant service '${tenantServiceName}'`
+    )
+    expect(replaceService.replaceSecret).not.toHaveBeenCalled()
+  })
+
+  it('returns a 409 error when another client has the same name', async () => {
+    replaceService.replaceSecret.mockResolvedValue({
+      outcome: ReplaceOutcome.NAME_SHARED
+    })
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(409)
+    expect(payload(response).message).toBe(
+      'Another client has the same name, so no secret was replaced'
+    )
+  })
+
+  it.each([
+    ['NOT_IN_CDP', 404, undefined],
+    [
+      'NAME_REUSED',
+      409,
+      'The stored client is out of date: its name belongs to a different client'
+    ],
+    [
+      'OUTCOME_UNKNOWN',
+      502,
+      'Replace outcome unknown: a new secret may have been issued, and the old secret may still be active. It is safe to try again.'
+    ]
+  ])(
+    'returns the rotate error when the rotate outcome is %s',
+    async (outcome, statusCode, message) => {
+      replaceService.replaceSecret.mockResolvedValue({
+        outcome: RotateOutcome[outcome]
+      })
+
+      const response = await inject()
+
+      expect(response.statusCode).toBe(statusCode)
+      if (message) {
+        expect(payload(response).message).toBe(message)
+      }
+      expect(clientService.saveClient).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([
+    [
+      false,
+      'failure',
+      'CDP refused the rotation request, so no secret was replaced'
+    ],
+    [
+      true,
+      'unknown',
+      'Replace outcome unknown: a new secret may have been issued, and the old secret may still be active. It is safe to try again.'
+    ]
+  ])(
+    'returns a 502 error when the rotate request fails (outcome unknown: %s)',
+    async (outcomeUnknown, outcome, message) => {
+      replaceService.replaceSecret.mockRejectedValue(
+        new MockCdpError('Failed', { outcomeUnknown })
+      )
+
+      const response = await inject()
+
+      expect(response.statusCode).toBe(502)
+      expect(payload(response)).toMatchObject({ message, outcome })
+    }
+  )
+
+  it('returns a 500 error when an unexpected error is thrown', async () => {
+    replaceService.replaceSecret.mockRejectedValue(new Error('Unexpected'))
+
+    const response = await inject()
+
+    expect(response.statusCode).toBe(500)
+  })
+
+  it('logs who requested the replacement, without the secret', async () => {
+    await inject()
+
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      `Client secret replacement requested by test for client ${clientId} of ${tenantServiceName}`
+    )
+    const loggedText = JSON.stringify([
+      mockLogger.info.mock.calls,
+      mockLogger.error.mock.calls
+    ])
+    expect(loggedText).not.toContain(rotatedClient.clientSecret)
+  })
+
+  it.each([
+    ['tenantServiceName', '/clients/Not_A_Service/my_client_id/replace'],
+    ['clientId', `/clients/${tenantServiceName}/not.a.client/replace`]
+  ])('returns a 400 error for an invalid %s (%s)', async (_, invalidUrl) => {
+    const response = await server.inject({
+      method: 'POST',
+      url: invalidUrl,
+      auth
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(replaceService.replaceSecret).not.toHaveBeenCalled()
   })
 
   it('returns a 401 error without credentials', async () => {
