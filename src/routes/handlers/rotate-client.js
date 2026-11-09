@@ -106,16 +106,24 @@ export async function rotateClientHandler(request, h) {
 }
 
 async function saveRotatedClient(db, tenantServiceName, rotatedClient) {
+  let secrets
+
   try {
-    const { secrets } = await getCognitoCredential(
+    ;({ secrets } = await getCognitoCredential(
       tenantServiceName,
       rotatedClient.clientId
-    )
+    ))
+  } catch (err) {
+    logger.error(`Failed to fetch credential metadata: ${err.message}`)
+    return
+  }
+
+  try {
     await saveClient(
       db,
       toClientRecord({ ...rotatedClient, secrets }, tenantServiceName)
     )
   } catch (err) {
-    logger.error(`Failed to fetch credential metadata: ${err.message}`)
+    logger.error(`Saving rotated client failed: ${err.message}`)
   }
 }

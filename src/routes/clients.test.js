@@ -752,6 +752,21 @@ describe('POST Clients rotate', () => {
     expect(clientService.saveClient).not.toHaveBeenCalled()
   })
 
+  it('logs an error but still returns the secret when saving the rotated client fails', async () => {
+    vi.spyOn(clientService, 'saveClient').mockRejectedValue(
+      new Error('Mongo down')
+    )
+    getCognitoCredential.mockResolvedValue({ secrets: [{ id: 'secret-1' }] })
+
+    const response = await server.inject({ method: 'POST', url, auth })
+
+    expect(response.statusCode).toBe(200)
+    expect(JSON.parse(response.payload)).toStrictEqual(rotatedCredentials)
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'Saving rotated client failed: Mongo down'
+    )
+  })
+
   it('returns only the client fields, not anything else', async () => {
     rotateCognitoCredential.mockResolvedValue([
       { ...rotatedClient, createdAt: '2026-10-14T12:00:00Z' }
