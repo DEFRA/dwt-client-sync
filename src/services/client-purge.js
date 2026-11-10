@@ -11,7 +11,7 @@ const logger = createLogger()
  * Throws a CdpError if CDP's purge request fails.
  * @param {string} tenantServiceName
  * @param {{ clientId: string, clientName: string }} client - The stored client
- * @returns {Promise<string>} The PurgeOutcome
+ * @returns {Promise<import('#/domain/client-secrets.js').PurgeOutcomeValue>}
  */
 async function purgeOldSecret(tenantServiceName, client) {
   const { clientId } = client

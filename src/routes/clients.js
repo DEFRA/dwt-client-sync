@@ -8,6 +8,7 @@ import { deleteClientHandler } from '#/routes/handlers/delete-client.js'
 import { getClientHandler } from '#/routes/handlers/get-client.js'
 import { listClientsHandler } from '#/routes/handlers/list-clients.js'
 import { purgeClientHandler } from '#/routes/handlers/purge-client.js'
+import { replaceClientHandler } from '#/routes/handlers/replace-client.js'
 import { rotateClientHandler } from '#/routes/handlers/rotate-client.js'
 import { syncClientsHandler } from '#/routes/handlers/sync-clients.js'
 
@@ -106,5 +107,20 @@ export const clients = [
       pre: [checkTenantService]
     },
     handler: purgeClientHandler
+  },
+  {
+    method: 'POST',
+    path: '/clients/{tenantServiceName}/{clientId}/replace',
+    options: {
+      validate: {
+        params: clientParamsSchema
+      },
+      pre: [checkTenantService],
+      // Responses can hold a client secret
+      cache: {
+        otherwise: 'no-store'
+      }
+    },
+    handler: replaceClientHandler
   }
 ]
