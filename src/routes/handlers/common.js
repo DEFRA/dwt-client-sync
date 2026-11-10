@@ -91,7 +91,8 @@ export function clientNotFound(tenantServiceName, clientId) {
 }
 
 /**
- * @param {string} outcome - A RotateOutcome other than ROTATED
+ * @param {import('#/domain/client-secrets.js').RotateOutcomeValue} outcome
+ * - Any but ROTATED
  * @param {string} [outcomeUnknownMessage] - What to say when CDP may have rotated
  * @returns {Boom.Boom} The error for the outcome
  */
@@ -114,7 +115,8 @@ export function rotateError(
 }
 
 /**
- * @param {string} outcome - A PurgeOutcome other than PURGED
+ * @param {import('#/domain/client-secrets.js').PurgeOutcomeValue} outcome
+ * - Any but PURGED
  * @param {{ clientId: string, clientName: string }} client
  * @returns {Boom.Boom} The error for the outcome
  */

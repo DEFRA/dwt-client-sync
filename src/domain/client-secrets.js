@@ -16,12 +16,14 @@ const PurgeOutcome = Object.freeze({
   OUTCOME_UNKNOWN: "CDP's purge response can't be read"
 })
 
+/** @typedef {(typeof PurgeOutcome)[keyof typeof PurgeOutcome]} PurgeOutcomeValue */
+
 /**
  * Reads CDP's purge response for a client.
  * @param {CognitoClient[] | undefined} purgedClients
  * - Every client CDP processed
  * @param {string} clientId
- * @returns {{ outcome: string, otherClientsPurged: number }}
+ * @returns {{ outcome: PurgeOutcomeValue, otherClientsPurged: number }}
  */
 function purgeResult(purgedClients, clientId) {
   // A success response we can't read: CDP may still have purged
@@ -59,12 +61,14 @@ const RotateOutcome = Object.freeze({
   OUTCOME_UNKNOWN: "CDP's rotate response can't be read"
 })
 
+/** @typedef {(typeof RotateOutcome)[keyof typeof RotateOutcome]} RotateOutcomeValue */
+
 /**
  * Reads CDP's rotate response for a client.
  * @param {CognitoClient[] | undefined} rotatedClients
  * - Every client CDP rotated, with its new secret
  * @param {string} clientId
- * @returns {{ outcome: string, rotatedClient?: CognitoClient, otherClientsRotated: number }}
+ * @returns {{ outcome: RotateOutcomeValue, rotatedClient?: CognitoClient, otherClientsRotated: number }}
  */
 function rotateResult(rotatedClients, clientId) {
   // A success response we can't read: CDP may still have rotated
@@ -105,8 +109,10 @@ const ReplaceOutcome = Object.freeze({
   PURGE_OUTCOME_UNKNOWN: 'the old secret may not have been removed'
 })
 
+/** @typedef {(typeof ReplaceOutcome)[keyof typeof ReplaceOutcome]} ReplaceOutcomeValue */
+
 /**
- * @param {string} outcome
+ * @param {ReplaceOutcomeValue | RotateOutcomeValue} outcome
  * @returns {boolean} Whether it's a RotateOutcome, so the rotate didn't happen
  * or its outcome is unknown
  */

@@ -10,6 +10,12 @@ import {
   RotateOutcome
 } from '#/domain/client-secrets.js'
 
+/**
+ * @typedef {import('#/domain/client-secrets.js').ReplaceOutcomeValue} ReplaceOutcomeValue
+ * @typedef {import('#/domain/client-secrets.js').RotateOutcomeValue} RotateOutcomeValue
+ * @typedef {import('#/common/helpers/cognito-client.js').CognitoClient} CognitoClient
+ */
+
 const logger = createLogger()
 
 /**
@@ -17,7 +23,8 @@ const logger = createLogger()
  * leaves only it. Never throws, as the new secret must still be returned.
  * @param {string} tenantServiceName
  * @param {{ clientId: string, clientName: string }} client
- * @returns {Promise<string>} REPLACED, OLD_SECRET_KEPT, or
+ * @returns {Promise<ReplaceOutcomeValue>}
+ * REPLACED, OLD_SECRET_KEPT, or
  * PURGE_OUTCOME_UNKNOWN when CDP may have purged
  */
 async function purgeAfterRotating(tenantServiceName, client) {
@@ -47,7 +54,7 @@ async function purgeAfterRotating(tenantServiceName, client) {
  * Throws a CdpError if CDP's rotate request fails, before anything is purged.
  * @param {string} tenantServiceName
  * @param {{ clientId: string, clientName: string }} client - The stored client
- * @returns {Promise<{ outcome: string, rotatedClient?: import('#/common/helpers/cognito-client.js').CognitoClient }>}
+ * @returns {Promise<{ outcome: ReplaceOutcomeValue | RotateOutcomeValue, rotatedClient?: CognitoClient }>}
  * A ReplaceOutcome, or the RotateOutcome when the rotate didn't happen, and
  * the client with its new secret when it was rotated
  */

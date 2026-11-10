@@ -7,6 +7,11 @@ import { saveClient } from '#/services/clients.js'
 import { toClientRecord } from '#/models/client-mapper.js'
 import { RotateOutcome, rotateResult } from '#/domain/client-secrets.js'
 
+/**
+ * @typedef {import('#/domain/client-secrets.js').RotateOutcomeValue} RotateOutcomeValue
+ * @typedef {import('#/common/helpers/cognito-client.js').CognitoClient} CognitoClient
+ */
+
 const logger = createLogger()
 
 /**
@@ -15,7 +20,7 @@ const logger = createLogger()
  * Throws a CdpError if CDP's rotate request fails.
  * @param {string} tenantServiceName
  * @param {{ clientId: string, clientName: string }} client - The stored client
- * @returns {Promise<{ outcome: string, rotatedClient?: import('#/common/helpers/cognito-client.js').CognitoClient }>}
+ * @returns {Promise<{ outcome: RotateOutcomeValue, rotatedClient?: CognitoClient }>}
  * The RotateOutcome, and the client with its new secret when it was rotated
  */
 async function rotateSecret(tenantServiceName, client) {
@@ -53,7 +58,7 @@ async function rotateSecret(tenantServiceName, client) {
  * here is only logged: the next sync corrects the stored secrets.
  * @param {object} db
  * @param {string} tenantServiceName
- * @param {import('#/common/helpers/cognito-client.js').CognitoClient} rotatedClient
+ * @param {CognitoClient} rotatedClient
  */
 async function saveRotatedClient(db, tenantServiceName, rotatedClient) {
   let secrets
