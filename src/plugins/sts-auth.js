@@ -49,6 +49,32 @@ function callerOf(subject) {
 }
 
 /**
+ * Checks an STS token's signature, issuer, audience and expiry.
+ * @param {string} token - The token, without "Bearer "
+ * @param {import('jose').JWTVerifyGetKey} jwks - The issuer's public keys
+ * @returns {Promise<import('jose').JWTPayload>} The token's claims
+ */
+async function verifyToken(token, jwks) {
+  const { audience, issuer } = config.get('stsAuth')
+
+  try {
+    const { payload } = await jwtVerify(token, jwks, {
+      audience,
+      issuer,
+      algorithms
+    })
+    return payload
+  } catch (err) {
+    // A failure to fetch the keys, as through the proxy, looks like a bad
+    // token to the caller, so the reason is logged. Never the token itself
+    logger.warn(
+      `Rejected an STS token: ${[err.code, err.message, err.cause?.message].filter(Boolean).join(': ')}`
+    )
+    throw Boom.unauthorized('Invalid token', 'Bearer')
+  }
+}
+
+/**
  * A Hapi auth scheme for AWS STS web identity tokens, as CDP's
  * service-to-service auth guide describes. A request without a Bearer token
  * is left to the other strategies, such as basic auth.
@@ -65,24 +91,10 @@ function stsScheme(jwks) {
         throw Boom.unauthorized(null, 'Bearer')
       }
 
-      const { audience, issuer } = config.get('stsAuth')
-      let payload
-
-      try {
-        ;({ payload } = await jwtVerify(
-          authorization.slice('Bearer '.length),
-          jwks,
-          { audience, issuer, algorithms }
-        ))
-      } catch (err) {
-        // A failure to fetch the keys, as through the proxy, looks like a bad
-        // token to the caller, so the reason is logged. Never the token itself
-        logger.warn(
-          `Rejected an STS token: ${[err.code, err.message, err.cause?.message].filter(Boolean).join(': ')}`
-        )
-        throw Boom.unauthorized('Invalid token', 'Bearer')
-      }
-
+      const payload = await verifyToken(
+        authorization.slice('Bearer '.length),
+        jwks
+      )
       const service = callerOf(payload.sub)
 
       // As basic auth's credentials, so the handlers log the caller the same way
