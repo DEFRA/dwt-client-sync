@@ -6,6 +6,15 @@ import { toClientRecord } from '#/models/client-mapper.js'
 import { managedServices } from '#/common/helpers/managed-services.js'
 
 const logger = createLogger()
+
+/**
+ * Makes the stored clients match CDP's, for every managed service. Only one
+ * instance syncs at a time: another that's already syncing is left to it.
+ * @param {import('mongodb').Db} db - The service's database
+ * @param {import('mongo-locks').LockManager} locker - Stops two instances syncing at once
+ * @returns {Promise<{ totalServicesProcessed: number, services: { serviceName: string, credentialsSynced: number }[] }>}
+ * How many clients were synced for each service
+ */
 async function sync(db, locker) {
   logger.info('Software Provider sync starting')
   let lock

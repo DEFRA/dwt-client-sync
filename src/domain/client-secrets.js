@@ -22,8 +22,9 @@ const PurgeOutcome = Object.freeze({
  * Reads CDP's purge response for a client.
  * @param {CognitoClient[] | undefined} purgedClients
  * - Every client CDP processed
- * @param {string} clientId
- * @returns {{ outcome: PurgeOutcomeValue, otherClientsPurged: number }}
+ * @param {string} clientId - The client that was asked for
+ * @returns {{ outcome: PurgeOutcomeValue, otherClientsPurged: number }} What
+ * happened to the client, and how many other clients with its name CDP purged
  */
 function purgeResult(purgedClients, clientId) {
   // A success response we can't read: CDP may still have purged
@@ -67,8 +68,10 @@ const RotateOutcome = Object.freeze({
  * Reads CDP's rotate response for a client.
  * @param {CognitoClient[] | undefined} rotatedClients
  * - Every client CDP rotated, with its new secret
- * @param {string} clientId
+ * @param {string} clientId - The client that was asked for
  * @returns {{ outcome: RotateOutcomeValue, rotatedClient?: CognitoClient, otherClientsRotated: number }}
+ * What happened to the client, the client with its new secret when it was
+ * rotated, and how many other clients with its name CDP rotated
  */
 function rotateResult(rotatedClients, clientId) {
   // A success response we can't read: CDP may still have rotated
@@ -112,7 +115,7 @@ const ReplaceOutcome = Object.freeze({
 /** @typedef {(typeof ReplaceOutcome)[keyof typeof ReplaceOutcome]} ReplaceOutcomeValue */
 
 /**
- * @param {ReplaceOutcomeValue | RotateOutcomeValue} outcome
+ * @param {ReplaceOutcomeValue | RotateOutcomeValue} outcome - A replace's outcome
  * @returns {boolean} Whether it's a RotateOutcome, so the rotate didn't happen
  * or its outcome is unknown
  */

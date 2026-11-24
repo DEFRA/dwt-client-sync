@@ -4,8 +4,8 @@
  */
 
 /**
- * @param {string | undefined} a
- * @param {string | undefined} b
+ * @param {string | undefined} a - One name
+ * @param {string | undefined} b - The other name
  * @returns {boolean} Whether the names match, ignoring case
  */
 function sameName(a, b) {
@@ -17,8 +17,8 @@ function sameName(a, b) {
 }
 
 /**
- * @param {{ clientName: string }[]} clients
- * @param {string} name
+ * @param {{ clientName: string }[]} clients - The clients to look through
+ * @param {string} name - The name to look for
  * @returns {boolean} Whether any of the clients has the name, ignoring case
  */
 function isNameTaken(clients, name) {
@@ -28,8 +28,8 @@ function isNameTaken(clients, name) {
 /**
  * CDP finds a client by its exact name, so another client with exactly the
  * same name could be acted on instead
- * @param {{ clientId: string, clientName: string }[]} clients
- * @param {{ clientId: string, clientName: string }} client
+ * @param {{ clientId: string, clientName: string }[]} clients - The service's clients
+ * @param {{ clientId: string, clientName: string }} client - The client to check
  * @returns {boolean} Whether another of the clients has exactly this client's
  * name
  */

@@ -15,6 +15,14 @@ import {
 
 const logger = createLogger()
 
+/**
+ * POST /clients/{tenantServiceName}/{clientId}/rotate: adds a new secret, and
+ * returns it, as it's only available now. CDP keeps the existing secret, or
+ * removes the oldest if the client already has two
+ * @param {import('@hapi/hapi').Request} request - The request
+ * @param {import('@hapi/hapi').ResponseToolkit} h - The response toolkit
+ * @returns {Promise<import('@hapi/hapi').ResponseObject | import('@hapi/boom').Boom>} The new credentials, or why there are none
+ */
 export async function rotateClientHandler(request, h) {
   try {
     const {

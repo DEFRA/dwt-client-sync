@@ -21,8 +21,8 @@ const logger = createLogger()
 /**
  * Purges a client just rotated. The new secret is the newest, so purging
  * leaves only it. Never throws, as the new secret must still be returned.
- * @param {string} tenantServiceName
- * @param {{ clientId: string, clientName: string }} client
+ * @param {string} tenantServiceName - The service it's a client of
+ * @param {{ clientId: string, clientName: string }} client - The client just rotated
  * @returns {Promise<ReplaceOutcomeValue>}
  * REPLACED, OLD_SECRET_KEPT, or
  * PURGE_OUTCOME_UNKNOWN when CDP may have purged
@@ -52,7 +52,7 @@ async function purgeAfterRotating(tenantServiceName, client) {
  * new secret works. Purging first would do nothing with one secret, leaving
  * the old one working after the rotate.
  * Throws a CdpError if CDP's rotate request fails, before anything is purged.
- * @param {string} tenantServiceName
+ * @param {string} tenantServiceName - The service it's a client of
  * @param {{ clientId: string, clientName: string }} client - The stored client
  * @returns {Promise<{ outcome: ReplaceOutcomeValue | RotateOutcomeValue, rotatedClient?: CognitoClient }>}
  * A ReplaceOutcome, or the RotateOutcome when the rotate didn't happen, and

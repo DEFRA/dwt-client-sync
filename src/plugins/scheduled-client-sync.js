@@ -5,6 +5,13 @@ import { config } from '#/config.js'
 
 const logger = createLogger()
 
+/**
+ * Syncs once when the service starts, logging rather than throwing if it
+ * fails, so the service still starts.
+ * @param {import('mongodb').Db} db - The service's database
+ * @param {import('mongo-locks').LockManager} locker - Stops two instances syncing at once
+ * @returns {Promise<void>}
+ */
 async function syncOnStartup(db, locker) {
   try {
     logger.info(await sync(db, locker))

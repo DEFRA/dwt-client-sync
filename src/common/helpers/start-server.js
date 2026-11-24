@@ -2,6 +2,9 @@ import { config } from '#/config.js'
 
 import { createServer } from '#/server.js'
 
+/**
+ * @returns {Promise<import('@hapi/hapi').Server>} The server, once it's started
+ */
 export async function startServer() {
   const server = await createServer()
   await server.start()

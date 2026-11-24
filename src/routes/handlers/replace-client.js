@@ -18,6 +18,13 @@ import {
 
 const logger = createLogger()
 
+/**
+ * POST /clients/{tenantServiceName}/{clientId}/replace: rotates, then purges
+ * the old secret, and returns the new one
+ * @param {import('@hapi/hapi').Request} request - The request
+ * @param {import('@hapi/hapi').ResponseToolkit} h - The response toolkit
+ * @returns {Promise<import('@hapi/hapi').ResponseObject | import('@hapi/boom').Boom>} The new credentials, or why the replace failed
+ */
 export async function replaceClientHandler(request, h) {
   try {
     const {

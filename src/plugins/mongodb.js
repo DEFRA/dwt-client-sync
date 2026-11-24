@@ -42,6 +42,14 @@ export const mongoDb = {
   }
 }
 
+/**
+ * Creates the indexes the locks and the stored clients need, if they're
+ * missing.
+ * @param {import('mongodb').Db} db - The service's database
+ * @param {{ collectionName: string }} options - The plugin's options, naming
+ * the clients' collection
+ * @returns {Promise<void>}
+ */
 async function createIndexes(db, options) {
   await db.collection('mongo-locks').createIndex({ id: 1 })
   await db

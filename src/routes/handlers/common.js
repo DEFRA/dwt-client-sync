@@ -45,11 +45,11 @@ export const DELETE_OUTCOME_UNKNOWN_MESSAGE =
  * or `unknown`, as ECS's event.outcome), so a caller can record it. Its
  * details can hold a client's new secret, so routes returning one must keep
  * their `no-store` cache setting
- * @param {string} message
- * @param {'success' | 'failure' | 'unknown'} outcome
+ * @param {string} message - What went wrong, for the caller
+ * @param {'success' | 'failure' | 'unknown'} outcome - Whether the change happened
  * @param {{ clientId?: string, clientName?: string, clientSecret?: string }} [details]
  * - Which client, when it's known, and its new credentials when they'd otherwise be lost
- * @returns {Boom.Boom}
+ * @returns {Boom.Boom} The 502
  */
 export function badGateway(message, outcome, details = {}) {
   const error = Boom.badGateway(message)
@@ -58,9 +58,10 @@ export function badGateway(message, outcome, details = {}) {
 }
 
 /**
- * @param {CdpError} err
- * @param {string} outcomeUnknownMessage
- * @param {string} refusedMessage
+ * @param {import('#/common/helpers/cognito-client.js').CdpError} err - The
+ * error CDP's call failed with
+ * @param {string} outcomeUnknownMessage - What to say when CDP may have made it
+ * @param {string} refusedMessage - What to say when CDP refused it
  * @returns {Boom.Boom} A 502 saying whether CDP may have made the change
  */
 export function cdpFailed(err, outcomeUnknownMessage, refusedMessage) {
@@ -70,7 +71,7 @@ export function cdpFailed(err, outcomeUnknownMessage, refusedMessage) {
 }
 
 /**
- * @param {string} clientName
+ * @param {string} clientName - The name asked for
  * @returns {Boom.Boom} A 409 naming the client
  */
 export function clientNameTaken(clientName) {
@@ -80,8 +81,8 @@ export function clientNameTaken(clientName) {
 }
 
 /**
- * @param {string} tenantServiceName
- * @param {string} clientId
+ * @param {string} tenantServiceName - The service the client was asked for in
+ * @param {string} clientId - The client asked for
  * @returns {Boom.Boom} A 404 naming the client and service
  */
 export function clientNotFound(tenantServiceName, clientId) {

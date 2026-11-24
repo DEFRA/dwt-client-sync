@@ -6,6 +6,13 @@ import { toClientResponse } from '#/models/client-mapper.js'
 
 const logger = createLogger()
 
+/**
+ * GET /clients/{tenantServiceName}: the service's stored clients, which is
+ * empty when it has none
+ * @param {import('@hapi/hapi').Request} request - The request
+ * @param {import('@hapi/hapi').ResponseToolkit} h - The response toolkit
+ * @returns {Promise<import('@hapi/hapi').ResponseObject | import('@hapi/boom').Boom>} The service's clients
+ */
 export async function listClientsHandler(request, h) {
   try {
     const {

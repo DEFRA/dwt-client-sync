@@ -9,11 +9,9 @@ const collectionName = config.get('mongo.collectionName')
 
 /**
  * Finds the client for the given tenantServiceName and clientId in the given db.
- *
- * @param {String} tenantServiceName - The tenant service name (can be found with `config.get('serviceName')`)
- * @param {String} clientId - The client id
- * @param {MongoDb} db - The db
- *
+ * @param {string} tenantServiceName - The service it's a client of
+ * @param {string} clientId - The client id
+ * @param {import('mongodb').Db} db - The db
  * @returns {Promise<ClientRecord | null>} The stored client
  */
 export function findClient(tenantServiceName, clientId, db) {
@@ -24,10 +22,8 @@ export function findClient(tenantServiceName, clientId, db) {
 
 /**
  * Finds the clients for the given tenantServiceName in the given db.
- *
- * @param {String} tenantServiceName - The tenant service name (can be found with `config.get('serviceName')`)
- * @param {MongoDb} db - The db
- *
+ * @param {string} tenantServiceName - The service it's a client of
+ * @param {import('mongodb').Db} db - The db
  * @returns {Promise<ClientRecord[]>} The stored clients
  */
 export function findClients(tenantServiceName, db) {
@@ -40,9 +36,9 @@ export function findClients(tenantServiceName, db) {
 /**
  * Stores one client, replacing any stored client with the same id. Safe while
  * a sync runs: see readStoredClients.
- *
- * @param {MongoDb} db - The db
+ * @param {import('mongodb').Db} db - The db
  * @param {ClientRecord} record - The client to store
+ * @returns {Promise<void>}
  */
 export async function saveClient(db, record) {
   const { tenantServiceName, clientId } = record
@@ -62,11 +58,9 @@ export async function saveClient(db, record) {
  *
  * A client created and then deleted while a sync is running can be stored
  * again until the next sync.
- *
- * @param {Logger} logger - The logger
- * @param {MongoDb} db - The db
- * @param {String} tenantServiceName - The tenant service name
- *
+ * @param {import('pino').Logger} logger - The logger
+ * @param {import('mongodb').Db} db - The db
+ * @param {string} tenantServiceName - The tenant service name
  * @returns {Promise<ClientRecord[]>} The stored clients
  */
 export async function readStoredClients(logger, db, tenantServiceName) {
@@ -85,12 +79,13 @@ export async function readStoredClients(logger, db, tenantServiceName) {
 
 /**
  * Makes the stored clients for the given tenantServiceName match the given clients.
- *
- * @param {Logger} logger - The logger
- * @param {MongoDb} db - The db
+ * @param {import('pino').Logger} logger - The logger
+ * @param {import('mongodb').Db} db - The db
  * @param {ClientRecord[]} incomingClients - Every client the service now has
- * @param {String} tenantServiceName - The tenant service name
+ * @param {string} tenantServiceName - The tenant service name
  * @param {ClientRecord[]} existing - The stored clients, from readStoredClients
+ * @returns {Promise<import('mongodb').BulkWriteResult | { inserted: number, updated: number, deleted: number }>}
+ * MongoDB's result, or zero counts when nothing changed
  */
 export async function store(
   logger,

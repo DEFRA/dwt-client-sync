@@ -23,6 +23,13 @@ import { listClients } from '#/services/client-directory.js'
 
 const logger = createLogger()
 
+/**
+ * POST /clients/{tenantServiceName}: asks CDP to create a client with the
+ * name, and returns its credentials, which are only available now
+ * @param {import('@hapi/hapi').Request} request - The request
+ * @param {import('@hapi/hapi').ResponseToolkit} h - The response toolkit
+ * @returns {Promise<import('@hapi/hapi').ResponseObject | import('@hapi/boom').Boom>} The new credentials, or why there are none
+ */
 export async function createClientHandler(request, h) {
   try {
     const {
