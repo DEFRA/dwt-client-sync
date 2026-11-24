@@ -21,6 +21,13 @@ const HTTP_STATUS_CODES = {
   NO_CONTENT: 204
 }
 
+/**
+ * POST /clients/{tenantServiceName}/{clientId}/purge: removes the client's
+ * older secret, keeping the newest
+ * @param {import('@hapi/hapi').Request} request - The request
+ * @param {import('@hapi/hapi').ResponseToolkit} h - The response toolkit
+ * @returns {Promise<import('@hapi/hapi').ResponseObject | import('@hapi/boom').Boom>} A 204 once purged, or why not
+ */
 export async function purgeClientHandler(request, h) {
   try {
     const {

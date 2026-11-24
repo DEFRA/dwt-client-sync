@@ -13,6 +13,10 @@ import { metrics } from '@defra/cdp-metrics'
 import { basicAuth, getEnvVars } from '@defra/waste-movement-utils'
 import { scheduledClientSync } from '#/plugins/scheduled-client-sync.js'
 
+/**
+ * @returns {Promise<import('@hapi/hapi').Server>} The server, set up but not
+ * started
+ */
 export async function createServer() {
   const server = Hapi.server({
     host: config.get('host'),

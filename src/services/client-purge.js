@@ -9,9 +9,10 @@ const logger = createLogger()
 /**
  * Removes a stored client's older secrets in CDP, keeping its newest.
  * Throws a CdpError if CDP's purge request fails.
- * @param {string} tenantServiceName
+ * @param {string} tenantServiceName - The service it's a client of
  * @param {{ clientId: string, clientName: string }} client - The stored client
  * @returns {Promise<import('#/domain/client-secrets.js').PurgeOutcomeValue>}
+ * What happened to the client
  */
 async function purgeOldSecret(tenantServiceName, client) {
   const { clientId } = client

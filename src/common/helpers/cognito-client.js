@@ -53,8 +53,8 @@ class CdpError extends Error {
  * A Cognito client, mapped from CDP's credentials API so nothing else here
  * depends on CDP's shape.
  * @typedef {object} CognitoClient
- * @property {string} clientId
- * @property {string} clientName
+ * @property {string} clientId - Cognito's id for the client
+ * @property {string} clientName - The name it was created with
  * @property {string} [clientSecret] - Only sent when a client is created or rotated
  * @property {{ id: string, createdAt: string }[]} [secrets] - The client's
  * secrets, without their values. Only sent when listing clients
@@ -64,7 +64,8 @@ class CdpError extends Error {
  * Maps a single client in a CDP credentials response (snake_case) to a
  * Cognito client, dropping anything else CDP sends.
  * @param {{ client_id?: string, client_name?: string, client_secret?: string,
- *   client_secrets?: { id: string, created_at: string }[] }} details
+ *   client_secrets?: { id: string, created_at: string }[] }} [details] - One
+ * client, as CDP sends it, which may be missing or not an object
  * @returns {CognitoClient | undefined} undefined when the details can't be
  * read, as they can't be mapped
  */
@@ -96,7 +97,7 @@ function fromClientDetails(details) {
 /**
  * Maps the clients in a CDP credentials response (snake_case) to Cognito
  * clients, dropping anything else CDP sends.
- * @param {{ client_details?: object[] }} payload
+ * @param {{ client_details?: object[] }} payload - CDP's response
  * @returns {CognitoClient[] | undefined} undefined when the response has no
  * client details, or any of them isn't an object, as it can't be read
  */
@@ -110,7 +111,11 @@ function toCognitoClients(payload) {
   return clients.includes(undefined) ? undefined : clients
 }
 
-// CDP's response for the single-client lookup
+/**
+ * Maps CDP's response for the single-client lookup to a Cognito client.
+ * @param {{ client_details?: object }} payload - CDP's response
+ * @returns {CognitoClient | undefined} undefined when it can't be read
+ */
 function toCognitoClient(payload) {
   return fromClientDetails(payload?.client_details)
 }
@@ -119,8 +124,8 @@ function toCognitoClient(payload) {
  * CDP's reason for an error response: API Gateway sends { message }, and CDP's
  * Lambda sends a plain string. Other bodies aren't logged, as they weren't
  * written by CDP as an error message.
- * @param {unknown} [payload]
- * @returns {string | undefined}
+ * @param {unknown} [payload] - The error response's body
+ * @returns {string | undefined} The reason, when CDP gave one
  */
 function errorReason(payload) {
   if (typeof payload?.message === 'string') {
@@ -136,9 +141,9 @@ function errorReason(payload) {
  * Describes a CDP error response for the logs: CDP's request ID, which its
  * docs ask us to quote when reporting a failure, and its reason. Only used for
  * error responses, which never hold secrets.
- * @param {object} [headers]
- * @param {unknown} [payload]
- * @returns {string}
+ * @param {object} [headers] - The error response's headers
+ * @param {unknown} [payload] - The error response's body
+ * @returns {string} The request ID and reason, as far as CDP gave them
  */
 function describeErrorResponse(headers, payload) {
   const requestId = headers?.['x-amzn-requestid']
@@ -154,7 +159,7 @@ function describeErrorResponse(headers, payload) {
  * still have acted if the request fails. The response can hold client
  * secrets, so it's never logged.
  * @param {string} action - What the request does, for error messages
- * @param {string} uri
+ * @param {string} uri - CDP's endpoint
  * @param {{ headers: object, body: string }} signed - The signed request
  * @param {object} [options] - Extra Wreck options
  * @returns {Promise<object>} The response payload
@@ -229,7 +234,7 @@ const isThrottled = (err) =>
 
 /**
  * Gets one page of the clients in a service's user pool.
- * @param {string} serviceName
+ * @param {string} serviceName - The service whose user pool holds the clients
  * @param {{ pageSize: number, nextToken: string | null }} page
  * @returns {Promise<object>} CDP's response
  */
@@ -282,7 +287,7 @@ async function fetchClientsPage(serviceName, { pageSize, nextToken }) {
 
 /**
  * Gets one page, retrying with smaller pages while CDP throttles the request.
- * @param {string} serviceName
+ * @param {string} serviceName - The service whose user pool holds the clients
  * @param {{ pageSize: number, nextToken: string | null }} page
  * @param {number} retriesLeft - The retries left for the whole listing
  * @param {number} [attempt] - How many times this page has been retried
@@ -331,9 +336,9 @@ async function fetchClientsPageWithRetries(
  * Sync treats a client missing from the list as deleted, so this guards
  * against returning part of the list: it throws if a page fails, and returns
  * undefined if a page can't be read or looks cut short.
- *
- * @param {string} serviceName
- * @returns {Promise<CognitoClient[] | undefined>}
+ * @param {string} serviceName - The service whose user pool holds the clients
+ * @returns {Promise<CognitoClient[] | undefined>} Every client, or undefined if
+ * the list can't be trusted to be complete
  */
 async function allCognitoCredentials(serviceName) {
   logger.info('Fetching all Cognito credentials')
@@ -397,9 +402,11 @@ async function allCognitoCredentials(serviceName) {
 }
 
 /**
- * @param {string} serviceName
- * @param {string} newClientName
- * @returns {Promise<CognitoClient[] | undefined>} The created client, with its secret
+ * @param {string} serviceName - The service whose user pool holds the clients
+ * @param {string} newClientName - The new client's name
+ * @returns {Promise<CognitoClient[] | undefined>} The clients CDP created, which
+ * is just this one, with its secret when CDP returns it. undefined when the
+ * response can't be read
  */
 async function createCognitoCredential(serviceName, newClientName) {
   logger.info('Creating new Cognito credentials')
@@ -441,8 +448,8 @@ async function createCognitoCredential(serviceName, newClientName) {
 }
 
 /**
- * @param {string} serviceName
- * @param {string} clientName
+ * @param {string} serviceName - The service whose user pool holds the clients
+ * @param {string} clientName - The client's name, as CDP rotates by name
  * @returns {Promise<CognitoClient[] | undefined>} Every client rotated, with its new secret
  */
 async function rotateCognitoCredential(serviceName, clientName) {
@@ -487,8 +494,8 @@ async function rotateCognitoCredential(serviceName, clientName) {
 /**
  * Removes a client's older secrets, keeping its newest. CDP purges by name,
  * so it acts on every client with that name.
- * @param {string} serviceName
- * @param {string} clientName
+ * @param {string} serviceName - The service whose user pool holds the clients
+ * @param {string} clientName - The client's name, as CDP purges by name
  * @returns {Promise<CognitoClient[] | undefined>} Every client CDP processed,
  * without secrets
  */
@@ -529,6 +536,15 @@ async function purgeCognitoCredential(serviceName, clientName) {
   return toCognitoClients(payload)
 }
 
+/**
+ * Deletes a client. CDP deletes by name, so it acts on every client with that
+ * name.
+ * @param {string} serviceName - The service whose user pool holds the clients
+ * Throws a CdpError if the request fails, or if CDP's reply isn't the empty
+ * list it sends once deleted, as CDP may not have deleted it.
+ * @param {string} clientName - The client's name, as CDP deletes by name
+ * @returns {Promise<void>}
+ */
 async function deleteCognitoCredential(serviceName, clientName) {
   logger.info('Deleting Cognito credentials')
 
@@ -575,11 +591,10 @@ async function deleteCognitoCredential(serviceName, clientName) {
 
 /**
  * Fetches information about a single client by clientId.
- *
- * @param {string} serviceName
- * @param {string} clientName
- * @param {string} clientId
- * @returns {Promise<CognitoClient | undefined>} The Cognito client with the given id
+ * @param {string} serviceName - The service whose user pool holds the clients
+ * @param {string} clientId - The client's id
+ * @returns {Promise<CognitoClient | undefined>} The Cognito client with the given
+ * id, or undefined when the response can't be read
  */
 async function getCognitoCredential(serviceName, clientId) {
   const path = fetchSingleClientPath

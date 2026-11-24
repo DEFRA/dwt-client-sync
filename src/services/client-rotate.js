@@ -15,10 +15,11 @@ import { RotateOutcome, rotateResult } from '#/domain/client-secrets.js'
 const logger = createLogger()
 
 /**
- * Issues a stored client a new secret in CDP, keeping its current one. CDP
- * rotates by name, so other clients with exactly that name get one too.
+ * Issues a stored client a new secret in CDP, keeping its current one (or, if
+ * it already has two, CDP removes the oldest). CDP rotates by name, so other
+ * clients with exactly that name get one too.
  * Throws a CdpError if CDP's rotate request fails.
- * @param {string} tenantServiceName
+ * @param {string} tenantServiceName - The service it's a client of
  * @param {{ clientId: string, clientName: string }} client - The stored client
  * @returns {Promise<{ outcome: RotateOutcomeValue, rotatedClient?: CognitoClient }>}
  * The RotateOutcome, and the client with its new secret when it was rotated
@@ -56,9 +57,10 @@ async function rotateSecret(tenantServiceName, client) {
 /**
  * Stores a rotated client's secrets. CDP has already rotated, so a failure
  * here is only logged: the next sync corrects the stored secrets.
- * @param {object} db
- * @param {string} tenantServiceName
- * @param {CognitoClient} rotatedClient
+ * @param {import('mongodb').Db} db - The service's database
+ * @param {string} tenantServiceName - The service it's a client of
+ * @param {CognitoClient} rotatedClient - The client, with its new secret
+ * @returns {Promise<void>}
  */
 async function saveRotatedClient(db, tenantServiceName, rotatedClient) {
   let secrets

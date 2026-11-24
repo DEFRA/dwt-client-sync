@@ -17,6 +17,16 @@ import { findClient } from '#/services/clients.js'
 
 const logger = createLogger()
 
+/**
+ * DELETE /clients/{tenantServiceName}/{clientId}: asks CDP to delete the
+ * client, unless it's already gone from CDP, then removes its stored record.
+ * Refused with a 409 if another client has exactly the same name, as CDP
+ * deletes by name. If only removing the stored record fails, it still
+ * succeeds, and the next sync removes it
+ * @param {import('@hapi/hapi').Request} request - The request
+ * @param {import('@hapi/hapi').ResponseToolkit} h - The response toolkit
+ * @returns {Promise<import('@hapi/hapi').ResponseObject | import('@hapi/boom').Boom>} An empty response once deleted, or why not
+ */
 export async function deleteClientHandler(request, h) {
   try {
     const {

@@ -29,8 +29,8 @@ const cognito = new CognitoIdentityProviderClient({
  * Lists every client in a tenant service's user pool, by id and name, without
  * secrets. Only one pool is configured, so it must be the only managed
  * service's.
- * @param {string} tenantServiceName
- * @returns {Promise<{ clientId: string, clientName: string }[]>}
+ * @param {string} tenantServiceName - The service whose clients to list
+ * @returns {Promise<{ clientId: string, clientName: string }[]>} Its clients
  */
 async function listUserPoolClients(tenantServiceName) {
   const services = managedServices()
@@ -63,8 +63,12 @@ async function listUserPoolClients(tenantServiceName) {
   }
 }
 
-// A failed connection can be an AggregateError with an empty message, with
-// the reasons in its errors
+/**
+ * Describes an AWS SDK error for the logs. A failed connection can be an
+ * AggregateError with an empty message, with the reasons in its errors.
+ * @param {unknown} err - The error
+ * @returns {string} Its name and reasons
+ */
 function describeError(err) {
   const reasons = [
     err?.message,
