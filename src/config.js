@@ -133,6 +133,45 @@ export const config = convict({
       env: 'TRACING_HEADER'
     }
   },
+  stsAuth: {
+    audience: {
+      doc: "Accept AWS STS web identity tokens addressed to this audience, as well as basic auth (CDP's service-to-service auth). Unset turns them off",
+      format: String,
+      nullable: true,
+      default: null,
+      env: 'STS_AUDIENCE'
+    },
+    issuer: {
+      doc: "The STS tokens' issuer, which CDP sets on every service",
+      format: String,
+      nullable: true,
+      default: null,
+      env: 'CDP_JWT_ISSUER'
+    },
+    jwksUri: {
+      doc: "Where the STS tokens' public keys are, which CDP sets on every service",
+      format: String,
+      nullable: true,
+      default: null,
+      env: 'CDP_JWT_JWKS_URI'
+    },
+    awsAccount: {
+      doc: "The AWS account the calling services' IAM roles are in, which CDP sets on every service",
+      format: String,
+      nullable: true,
+      default: null,
+      env: 'AWS_ACCOUNT'
+    },
+    allowedCallers: {
+      doc: 'The services that may call with an STS token, by name',
+      format: Array,
+      default: [
+        'digital-waste-tracking-admin-ui',
+        'waste-movement-external-api'
+      ],
+      env: 'STS_ALLOWED_CALLERS'
+    }
+  },
   cognito: {
     protocol: {
       doc: 'Protocol for the Cognito service',
