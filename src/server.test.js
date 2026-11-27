@@ -38,5 +38,14 @@ describe('#createServer', () => {
     test(`Should authenticate with ${strategies.join(', then ')}`, () => {
       expect(server.auth.settings.default.strategies).toEqual(strategies)
     })
+
+    test('Should answer health checks without credentials', async () => {
+      const { statusCode } = await server.inject({
+        method: 'GET',
+        url: '/health'
+      })
+
+      expect(statusCode).toBe(200)
+    })
   })
 })
