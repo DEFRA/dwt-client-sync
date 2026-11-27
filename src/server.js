@@ -13,6 +13,7 @@ import { metrics } from '@defra/cdp-metrics'
 import { basicAuth, getEnvVars } from '@defra/waste-movement-utils'
 import { scheduledClientSync } from '#/plugins/scheduled-client-sync.js'
 import { isStsAuthEnabled, stsAuth, stsStrategy } from '#/plugins/sts-auth.js'
+import { authLogging } from '#/plugins/auth-logging.js'
 
 /**
  * @returns {Promise<import('@hapi/hapi').Server>} The server, set up but not
@@ -65,7 +66,8 @@ export async function createServer() {
     router,
     scheduledClientSync,
     basicAuth(getEnvVars('ACCESS_CRED_')),
-    stsAuth
+    stsAuth,
+    authLogging
   ])
 
   // Services can also send an STS token, when it's switched on
