@@ -19,7 +19,10 @@ export const authLogging = {
         const { isAuthenticated, strategy, credentials } = request.auth
 
         if (isAuthenticated) {
-          logger.info(`Authenticated ${credentials.username} via ${strategy}`)
+          // Both strategies set it, the STS caller's service or the basic auth
+          // username
+          const username = /** @type {string} */ (credentials.username)
+          logger.info(`Authenticated ${username} via ${strategy}`)
         }
 
         return h.continue
